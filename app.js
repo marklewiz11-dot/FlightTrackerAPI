@@ -15,8 +15,7 @@ function statusClass(text) {
   const s = String(text || "").toLowerCase();
   if (s.includes("cancel")) return "bad";
   if (s.includes("delay") || s.includes("revised")) return "warn";
-  if (s.includes("arrived") || s.includes("departed") || s.includes("boarding") || s.includes("gateclosed") || s.includes("enroute") || s.includes("approaching")) return "good";
-  if (s.includes("expected") || s.includes("predicted")) return "neutral";
+  if (s.includes("arrived") || s.includes("departed") || s.includes("boarding") || s.includes("enroute")) return "good";
   return "neutral";
 }
 
@@ -36,30 +35,57 @@ function metricSet(totals) {
 
 function shortTime(value) {
   if (!value) return "—";
-  return String(value).includes("T") ? String(value).slice(11, 16) : String(value).slice(0, 5);
+
+  const str = String(value);
+
+  if (str.includes("T")) {
+    const match = str.match(/T(\d{2}:\d{2})/);
+    return match ? match[1] : str;
+  }
+
+  const match = str.match(/(\d{2}:\d{2})/);
+  return match ? match[1] : str;
+}
+
+function displayRoute(flight) {
+  return (
+    flight.route ||
+    flight._rawMovementAirport ||
+    flight.airline ||
+    "—"
+  );
+}
+
+function displayStatus(flight) {
+  if (flight.status === "Revised" && flight.revisedTime) {
+    return `Delayed to ${shortTime(flight.revisedTime)}`;
+  }
+
+  if (flight.status === "Predicted" && flight.predictedTime) {
+    return `Predicted ${shortTime(flight.predictedTime)}`;
+  }
+
+  if (flight.status === "Scheduled" && flight.quality) {
+    return "Scheduled";
+  }
+
+  return flight.status || "Unknown";
 }
 
 function rowHtml(flight) {
-  const displayStatus =
-    flight.status === "Revised" && flight.revisedTime
-      ? `Delayed to ${shortTime(flight.revisedTime)}`
-      : flight.status === "Predicted" && flight.predictedTime
-      ? `Predicted ${shortTime(flight.predictedTime)}`
-      : flight.status || "Unknown";
-
-  const extra =
-    flight.quality && flight.quality !== "Unknown"
-      ? ` <span class="muted">(${flight.quality})</span>`
-      : "";
+  const status = displayStatus(flight);
+  const quality = flight.quality && flight.quality !== "Unknown"
+    ? ` <span class="muted">(${flight.quality})</span>`
+    : "";
 
   return `
     <tr>
       <td>${flight.number || "—"}</td>
-      <td>${flight.route || "—"}</td>
+      <td>${displayRoute(flight)}</td>
       <td>${shortTime(flight.scheduledTime)}</td>
       <td>
-        <span class="status ${statusClass(displayStatus)}">
-          <span class="dot"></span>${displayStatus}${extra}
+        <span class="status ${statusClass(status)}">
+          <span class="dot"></span>${status}${quality}
         </span>
       </td>
     </tr>

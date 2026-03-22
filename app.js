@@ -15,7 +15,7 @@ function statusClass(text) {
   const s = String(text || "").toLowerCase();
   if (s.includes("cancel")) return "status-bad";
   if (s.includes("delay")) return "status-warn";
-  if (s.includes("arrived") || s.includes("departed")) return "status-good";
+  if (s.includes("arrived") || s.includes("departed") || s.includes("on time") || s.includes("early")) return "status-good";
   return "status-neutral";
 }
 
@@ -52,10 +52,31 @@ function pakistanTime(value) {
 }
 
 function displayStatus(flight) {
-  if (String(flight.status).toLowerCase() === "delayed" && flight.estimatedTime) {
+  const status = String(flight.status || "").toLowerCase();
+
+  if (status === "delayed" && flight.estimatedTime) {
     return `Delayed to ${pakistanTime(flight.estimatedTime)}`;
   }
+
+  if (status === "early" && flight.estimatedTime) {
+    return `Early ${pakistanTime(flight.estimatedTime)}`;
+  }
+
+  if (status === "on time") {
+    return "On Time";
+  }
+
   return flight.status || "Unknown";
+}
+
+function displayTime(flight) {
+  const status = String(flight.status || "").toLowerCase();
+
+  if ((status === "delayed" || status === "early" || status === "on time") && flight.estimatedTime) {
+    return pakistanTime(flight.estimatedTime);
+  }
+
+  return pakistanTime(flight.scheduledTime);
 }
 
 function rowHtml(flight) {
@@ -65,7 +86,7 @@ function rowHtml(flight) {
     <tr>
       <td class="flightCol">${flight.number || "—"}</td>
       <td class="routeCol">${flight.route || "—"}</td>
-      <td class="timeCol">${pakistanTime(flight.scheduledTime)}</td>
+      <td class="timeCol">${displayTime(flight)}</td>
       <td>
         <span class="statusPill ${statusClass(status)}">
           <span class="dot"></span>${status}
@@ -85,7 +106,7 @@ function tableHtml(title, rows) {
             <tr>
               <th>Flight</th>
               <th>Route</th>
-              <th>Sched</th>
+              <th>Time</th>
               <th>Status</th>
             </tr>
           </thead>

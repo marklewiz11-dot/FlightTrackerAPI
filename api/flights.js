@@ -27,33 +27,45 @@ export default async function handler(req, res) {
     return Number.isNaN(t) ? null : t;
   }
 
-  function isMeaningfullyDelayed(scheduled, estimated) {
+  function compareTimes(scheduled, estimated) {
     const s = toMillis(scheduled);
     const e = toMillis(estimated);
-    if (s == null || e == null) return false;
 
-    const diffMinutes = (e - s) / 60000;
-    return diffMinutes >= 10;
+    if (s == null || e == null) return null;
+
+    const diffMinutes = Math.round((e - s) / 60000);
+
+    if (diffMinutes >= 10) return { state: "delayed", diffMinutes };
+    if (diffMinutes <= -10) return { state: "early", diffMinutes };
+    return { state: "ontime", diffMinutes };
   }
 
   function deriveArrivalStatus(f) {
     const raw = String(f.status || "").toLowerCase();
+    const cmp = compareTimes(f.scheduled_in, f.estimated_in);
 
     if (f.cancelled) return "Cancelled";
     if (f.actual_in) return "Arrived";
-    if (raw.includes("delay")) return "Delayed";
-    if (isMeaningfullyDelayed(f.scheduled_in, f.estimated_in)) return "Delayed";
+    if (raw.includes("cancel")) return "Cancelled";
+    if (raw.includes("arriv")) return "Arrived";
+    if (cmp?.state === "delayed") return "Delayed";
+    if (cmp?.state === "early") return "Early";
+    if (cmp?.state === "ontime") return "On Time";
 
     return "Scheduled";
   }
 
   function deriveDepartureStatus(f) {
     const raw = String(f.status || "").toLowerCase();
+    const cmp = compareTimes(f.scheduled_out, f.estimated_out);
 
     if (f.cancelled) return "Cancelled";
     if (f.actual_out) return "Departed";
-    if (raw.includes("delay")) return "Delayed";
-    if (isMeaningfullyDelayed(f.scheduled_out, f.estimated_out)) return "Delayed";
+    if (raw.includes("cancel")) return "Cancelled";
+    if (raw.includes("depart")) return "Departed";
+    if (cmp?.state === "delayed") return "Delayed";
+    if (cmp?.state === "early") return "Early";
+    if (cmp?.state === "ontime") return "On Time";
 
     return "Scheduled";
   }
@@ -170,7 +182,7 @@ export default async function handler(req, res) {
           },
           arrivals,
           departures,
-          warnings: ["Delayed is shown only when explicitly delayed or at least 10 minutes later than scheduled."]
+          warnings: ["Today and tomorrow in Pakistan time. On Time is shown when estimated and scheduled are effectively the same."]
         }
       ],
       totals: {

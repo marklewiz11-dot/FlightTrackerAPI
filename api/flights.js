@@ -12,7 +12,7 @@ export default async function handler(req, res) {
     const response = await fetch(`${base}/health/services/airports/${icao}/feeds`, {
       headers: {
         "x-magicapi-key": apiKey,
-        "accept": "application/json"
+        accept: "application/json"
       }
     });
 
@@ -68,8 +68,8 @@ export default async function handler(req, res) {
 
   async function getAirport(airport) {
     const url = new URL(`${base}/flights/airports/iata/${airport.iata}`);
-    url.searchParams.set("offsetMinutes", "-180");
-    url.searchParams.set("durationMinutes", "960");
+    url.searchParams.set("offsetMinutes", "0");
+    url.searchParams.set("durationMinutes", "720");
     url.searchParams.set("direction", "Both");
     url.searchParams.set("withCancelled", "true");
     url.searchParams.set("withCodeshared", "true");
@@ -81,7 +81,7 @@ export default async function handler(req, res) {
       fetch(url.toString(), {
         headers: {
           "x-magicapi-key": apiKey,
-          "accept": "application/json"
+          accept: "application/json"
         }
       }),
       getCoverage(airport.icao)

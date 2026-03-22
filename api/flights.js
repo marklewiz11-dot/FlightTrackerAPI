@@ -1,5 +1,5 @@
 export default async function handler(req, res) {
-  const apiKey = "cmn1fzpdc0001k004gqkdnzkh";
+  const apiKey = "hn1UO6XF9P3DrZPwMPi5ABgWXEV3wrvF";
 
   const base = "https://prod.api.market/api/v1/aedbx/aerodatabox";
   const airports = [

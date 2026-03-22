@@ -14,8 +14,8 @@ function metric(label, value) {
 function statusClass(text) {
   const s = String(text || "").toLowerCase();
   if (s.includes("cancel")) return "bad";
-  if (s.includes("delay") || s.includes("revised")) return "warn";
-  if (s.includes("arrived") || s.includes("departed") || s.includes("boarding") || s.includes("enroute")) return "good";
+  if (s.includes("delay")) return "warn";
+  if (s.includes("arrived") || s.includes("departed")) return "good";
   return "neutral";
 }
 
@@ -35,57 +35,26 @@ function metricSet(totals) {
 
 function shortTime(value) {
   if (!value) return "—";
-
   const str = String(value);
-
-  if (str.includes("T")) {
-    const match = str.match(/T(\d{2}:\d{2})/);
-    return match ? match[1] : str;
-  }
-
-  const match = str.match(/(\d{2}:\d{2})/);
+  const match = str.match(/T(\d{2}:\d{2})/);
   return match ? match[1] : str;
 }
 
-function displayRoute(flight) {
-  return (
-    flight.route ||
-    flight._rawMovementAirport ||
-    flight.airline ||
-    "—"
-  );
-}
-
-function displayStatus(flight) {
-  if (flight.status === "Revised" && flight.revisedTime) {
-    return `Delayed to ${shortTime(flight.revisedTime)}`;
-  }
-
-  if (flight.status === "Predicted" && flight.predictedTime) {
-    return `Predicted ${shortTime(flight.predictedTime)}`;
-  }
-
-  if (flight.status === "Scheduled" && flight.quality) {
-    return "Scheduled";
-  }
-
-  return flight.status || "Unknown";
-}
-
 function rowHtml(flight) {
-  const status = displayStatus(flight);
-  const quality = flight.quality && flight.quality !== "Unknown"
-    ? ` <span class="muted">(${flight.quality})</span>`
-    : "";
+  let status = flight.status || "Unknown";
+
+  if (status === "Delayed" && flight.estimatedTime) {
+    status = `Delayed to ${shortTime(flight.estimatedTime)}`;
+  }
 
   return `
     <tr>
       <td>${flight.number || "—"}</td>
-      <td>${displayRoute(flight)}</td>
+      <td>${flight.route || "—"}</td>
       <td>${shortTime(flight.scheduledTime)}</td>
       <td>
         <span class="status ${statusClass(status)}">
-          <span class="dot"></span>${status}${quality}
+          <span class="dot"></span>${status}
         </span>
       </td>
     </tr>
@@ -159,7 +128,7 @@ async function load() {
   const warningItems = safeArray(data.warnings);
   warnings.innerHTML = warningItems.length
     ? warningItems.map(w => `<div class="notice">${w}</div>`).join("")
-    : `<div class="notice">Live airport boards powered by AeroDataBox.</div>`;
+    : `<div class="notice">Live airport boards powered by FlightAware AeroAPI.</div>`;
 
   lastUpdated.textContent = data.generatedAt
     ? `Updated ${new Date(data.generatedAt).toLocaleString()}`
@@ -169,4 +138,3 @@ async function load() {
 }
 
 load();
-setInterval(load, 5 * 60 * 1000);

@@ -13,10 +13,10 @@ function metric(label, value) {
 
 function statusClass(text) {
   const s = String(text || "").toLowerCase();
-  if (s.includes("cancel")) return "bad";
-  if (s.includes("delay")) return "warn";
-  if (s.includes("arrived") || s.includes("departed")) return "good";
-  return "neutral";
+  if (s.includes("cancel")) return "status-bad";
+  if (s.includes("delay")) return "status-warn";
+  if (s.includes("arrived") || s.includes("departed")) return "status-good";
+  return "status-neutral";
 }
 
 function safeArray(v) {
@@ -26,8 +26,8 @@ function safeArray(v) {
 function metricSet(totals) {
   return [
     metric("Total Flights", totals.flights || 0),
-    metric("Delayed Flights", totals.delayed || 0),
-    metric("Cancelled Flights", totals.cancelled || 0),
+    metric("Delayed", totals.delayed || 0),
+    metric("Cancelled", totals.cancelled || 0),
     metric("Delayed %", fmtPct(totals.delayedPct || 0)),
     metric("Cancelled %", fmtPct(totals.cancelledPct || 0))
   ].join("");
@@ -40,20 +40,23 @@ function shortTime(value) {
   return match ? match[1] : str;
 }
 
-function rowHtml(flight) {
-  let status = flight.status || "Unknown";
-
-  if (status === "Delayed" && flight.estimatedTime) {
-    status = `Delayed to ${shortTime(flight.estimatedTime)}`;
+function displayStatus(flight) {
+  if (String(flight.status).toLowerCase() === "delayed" && flight.estimatedTime) {
+    return `Delayed to ${shortTime(flight.estimatedTime)}`;
   }
+  return flight.status || "Unknown";
+}
+
+function rowHtml(flight) {
+  const status = displayStatus(flight);
 
   return `
     <tr>
-      <td>${flight.number || "—"}</td>
-      <td>${flight.route || "—"}</td>
-      <td>${shortTime(flight.scheduledTime)}</td>
+      <td class="flightCol">${flight.number || "—"}</td>
+      <td class="routeCol">${flight.route || "—"}</td>
+      <td class="timeCol">${shortTime(flight.scheduledTime)}</td>
       <td>
-        <span class="status ${statusClass(status)}">
+        <span class="statusPill ${statusClass(status)}">
           <span class="dot"></span>${status}
         </span>
       </td>
@@ -102,8 +105,8 @@ function airportCard(airport) {
       ${(airport.warnings || []).length ? `<div class="notice" style="margin:0 18px 16px">${airport.warnings.join(" • ")}</div>` : ""}
 
       <div class="split">
-        ${tableHtml("Arrivals", (airport.arrivals || []).slice(0, 20))}
-        ${tableHtml("Departures", (airport.departures || []).slice(0, 20))}
+        ${tableHtml("Arrivals", (airport.arrivals || []).slice(0, 24))}
+        ${tableHtml("Departures", (airport.departures || []).slice(0, 24))}
       </div>
     </section>
   `;
@@ -121,14 +124,20 @@ async function load() {
   const data = await res.json();
 
   const airports = safeArray(data.airports);
-  const totals = data.totals || { flights: 0, delayed: 0, cancelled: 0, delayedPct: 0, cancelledPct: 0 };
+  const totals = data.totals || {
+    flights: 0,
+    delayed: 0,
+    cancelled: 0,
+    delayedPct: 0,
+    cancelledPct: 0
+  };
 
   nationalMetrics.innerHTML = metricSet(totals);
 
   const warningItems = safeArray(data.warnings);
   warnings.innerHTML = warningItems.length
     ? warningItems.map(w => `<div class="notice">${w}</div>`).join("")
-    : `<div class="notice">Live airport boards powered by FlightAware AeroAPI.</div>`;
+    : "";
 
   lastUpdated.textContent = data.generatedAt
     ? `Updated ${new Date(data.generatedAt).toLocaleString()}`

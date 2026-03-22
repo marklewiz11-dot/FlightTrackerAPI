@@ -1,0 +1,59 @@
+:root {
+  --bg: #07101f;
+  --bg2: #0d1830;
+  --border: rgba(255,255,255,0.08);
+  --text: #edf3ff;
+  --muted: #98a8c6;
+  --green: #31c48d;
+  --amber: #ffb020;
+  --red: #ff6363;
+  --shadow: 0 18px 40px rgba(0,0,0,0.35);
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top left, rgba(65, 120, 255, 0.18), transparent 24%),
+    radial-gradient(circle at top right, rgba(0, 183, 255, 0.12), transparent 18%),
+    linear-gradient(180deg, var(--bg2) 0%, var(--bg) 46%, #040913 100%);
+}
+.container { width: min(1440px, calc(100vw - 28px)); margin: 0 auto; padding: 28px 0 40px; }
+.hero { display: flex; justify-content: space-between; gap: 20px; align-items: flex-end; margin-bottom: 22px; }
+.eyebrow { display: inline-block; margin-bottom: 10px; padding: 7px 12px; border-radius: 999px; border: 1px solid rgba(115, 200, 255, 0.24); background: rgba(115, 200, 255, 0.08); color: #c6ecff; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+h1 { margin: 0; font-size: 38px; line-height: 1.02; letter-spacing: -0.04em; }
+.subtitle { margin: 10px 0 0; color: var(--muted); font-size: 15px; }
+.heroBadges { display: flex; flex-wrap: wrap; gap: 10px; }
+.badge { padding: 9px 13px; border-radius: 999px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); font-size: 12px; color: #d8e7ff; }
+.topGrid { display: grid; grid-template-columns: 1.3fr 0.7fr; gap: 18px; margin-bottom: 18px; }
+.airportGrid { display: grid; gap: 18px; }
+.card, .airportCard { background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.02)); border: 1px solid var(--border); border-radius: 22px; box-shadow: var(--shadow); overflow: hidden; }
+.cardHeader { display: flex; justify-content: space-between; gap: 14px; align-items: center; padding: 18px 18px 0; }
+.cardHeader h2 { margin: 0; font-size: 18px; }
+.muted { color: var(--muted); font-size: 12px; }
+.metrics, .airportMetrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; padding: 18px; }
+.metric { min-height: 108px; border-radius: 18px; border: 1px solid var(--border); background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02)); padding: 16px; }
+.metricLabel { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.metricValue { margin-top: 10px; font-size: 30px; font-weight: 700; letter-spacing: -0.03em; }
+.noticeList { padding: 18px; display: flex; flex-direction: column; gap: 10px; }
+.notice { border: 1px dashed rgba(255,255,255,0.16); border-radius: 14px; background: rgba(255,255,255,0.03); padding: 12px 14px; color: #d5e0f5; font-size: 13px; }
+.airportHead { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 18px 0; }
+.airportName { margin: 0; font-size: 24px; letter-spacing: -0.02em; }
+.airportMeta { color: var(--muted); font-size: 13px; margin-top: 4px; }
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 0 18px 18px; }
+.panelTitle { margin: 0 0 10px; font-size: 15px; font-weight: 700; }
+.tableWrap { border: 1px solid var(--border); border-radius: 16px; overflow: hidden; background: rgba(255,255,255,0.02); }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 11px 12px; border-bottom: 1px solid var(--border); text-align: left; font-size: 13px; }
+th { color: var(--muted); background: rgba(255,255,255,0.04); }
+tbody tr:last-child td { border-bottom: 0; }
+.status { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+.dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; }
+.status.good .dot { background: var(--green); }
+.status.warn .dot { background: var(--amber); }
+.status.bad .dot { background: var(--red); }
+.status.neutral .dot { background: #7f8baa; }
+.loading { padding: 80px 0; text-align: center; color: var(--muted); font-size: 18px; }
+@media (max-width: 1180px) { .topGrid { grid-template-columns: 1fr; } .metrics, .airportMetrics { grid-template-columns: repeat(2, 1fr); } .split { grid-template-columns: 1fr; } }
+@media (max-width: 760px) { .container { width: min(100vw - 20px, 100%); } .hero { flex-direction: column; align-items: flex-start; } h1 { font-size: 30px; } .metrics, .airportMetrics { grid-template-columns: 1fr 1fr; } .airportHead { flex-direction: column; align-items: flex-start; } }

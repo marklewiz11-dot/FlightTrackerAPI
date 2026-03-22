@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Pakistan Flight Tracker</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="hero">
+      <div>
+        <div class="eyebrow">Operational dashboard</div>
+        <h1>Pakistan Flight Tracker</h1>
+        <p class="subtitle">
+          Live arrivals, departures, delays and cancellations for Islamabad, Lahore and Karachi
+        </p>
+      </div>
+      <div class="heroBadges">
+        <span class="badge">AeroDataBox live API</span>
+        <span class="badge">Browser link ready</span>
+        <span class="badge">Dark FIDS style</span>
+      </div>
+    </header>
+    <section class="topGrid">
+      <div class="card">
+        <div class="cardHeader">
+          <h2>National Overview</h2>
+          <div id="lastUpdated" class="muted">Loading…</div>
+        </div>
+        <div class="metrics" id="nationalMetrics"></div>
+      </div>
+      <div class="card">
+        <div class="cardHeader">
+          <h2>Notes</h2>
+        </div>
+        <div id="warnings" class="noticeList"></div>
+      </div>
+    </section>
+    <main id="airportGrid" class="airportGrid"></main>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

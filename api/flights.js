@@ -1,5 +1,5 @@
 export default async function handler(req, res) {
-  const apiKey = "PASTE_YOUR_AERODATABOX_KEY_HERE";
+  const apiKey = "cmn1fzpdc0001k004gqkdnzkh";
 
   const base = "https://prod.api.market/api/v1/aedbx/aerodatabox";
   const airports = [
@@ -12,7 +12,7 @@ export default async function handler(req, res) {
     const response = await fetch(`${base}/health/services/airports/${icao}/feeds`, {
       headers: {
         "x-magicapi-key": apiKey,
-        accept: "application/json"
+        "accept": "application/json"
       }
     });
 
@@ -33,23 +33,10 @@ export default async function handler(req, res) {
     const movement = direction === "arrival" ? flight.arrival : flight.departure;
 
     if (!movement) return raw;
-
-    if (movement.runwayTime?.local) {
-      return direction === "arrival" ? "Arrived" : "Departed";
-    }
-
-    if (raw && raw !== "Unknown") {
-      return raw;
-    }
-
-    if (movement.revisedTime?.local && movement.scheduledTime?.local) {
-      return "Revised";
-    }
-
-    if (movement.predictedTime?.local && movement.scheduledTime?.local) {
-      return "Predicted";
-    }
-
+    if (movement.runwayTime?.local) return direction === "arrival" ? "Arrived" : "Departed";
+    if (raw && raw !== "Unknown") return raw;
+    if (movement.revisedTime?.local && movement.scheduledTime?.local) return "Revised";
+    if (movement.predictedTime?.local && movement.scheduledTime?.local) return "Predicted";
     return "Unknown";
   }
 
@@ -61,11 +48,8 @@ export default async function handler(req, res) {
       number:
         flight?.number ||
         flight?.callSign ||
-        flight?.airline?.iata && flight?.number
-          ? `${flight.airline.iata}${flight.number}`
-          : flight?.number ||
-            flight?.callSign ||
-            "—",
+        (flight?.airline?.iata && flight?.number ? `${flight.airline.iata}${flight.number}` : null) ||
+        "—",
       airline: flight?.airline?.name || "—",
       route: opposite?.airport?.name || movement?.airport?.name || "—",
       scheduledTime: movement?.scheduledTime?.local || null,
@@ -97,7 +81,7 @@ export default async function handler(req, res) {
       fetch(url.toString(), {
         headers: {
           "x-magicapi-key": apiKey,
-          accept: "application/json"
+          "accept": "application/json"
         }
       }),
       getCoverage(airport.icao)
@@ -114,17 +98,12 @@ export default async function handler(req, res) {
     const all = [...arrivals, ...departures];
 
     const delayed = all.filter(f => String(f.status).toLowerCase().includes("delay")).length;
-    const cancelled = all.filter(f => {
-      const s = String(f.status).toLowerCase();
-      return s.includes("cancel");
-    }).length;
+    const cancelled = all.filter(f => String(f.status).toLowerCase().includes("cancel")).length;
 
     const warnings = [];
     if (coverage && Array.isArray(coverage)) {
       const nonOk = coverage.filter(x => x.status && !["OK", "OKPartial"].includes(x.status));
-      if (nonOk.length) {
-        warnings.push(`Coverage not fully live for ${airport.name}`);
-      }
+      if (nonOk.length) warnings.push(`Coverage not fully live for ${airport.name}`);
     }
 
     return {
@@ -186,7 +165,13 @@ export default async function handler(req, res) {
     return res.status(500).json({
       generatedAt: new Date().toISOString(),
       airports: [],
-      totals: { flights: 0, delayed: 0, cancelled: 0, delayedPct: 0, cancelledPct: 0 },
+      totals: {
+        flights: 0,
+        delayed: 0,
+        cancelled: 0,
+        delayedPct: 0,
+        cancelledPct: 0
+      },
       warnings: [error.message || "Failed to load AeroDataBox data."]
     });
   }

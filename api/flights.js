@@ -15,57 +15,52 @@ export default async function handler(req, res) {
     return f.ident_iata || f.ident || "—";
   }
 
-  function routeForArrival(f) {
-    return f.origin_iata || f.origin || "—";
+  function airportCode(value) {
+    if (!value) return "—";
+    if (typeof value === "string") return value;
+    return value.code_iata || value.code_icao || value.code || value.name || "—";
   }
 
-  function routeForDeparture(f) {
-    return f.destination_iata || f.destination || "—";
-  }
-
-  function scheduledForArrival(f) {
-    return f.scheduled_in || f.estimated_in || f.actual_in || null;
-  }
-
-  function scheduledForDeparture(f) {
-    return f.scheduled_out || f.estimated_out || f.actual_out || null;
+  function shortTime(value) {
+    if (!value) return null;
+    const s = String(value);
+    const m = s.match(/T(\d{2}:\d{2})/);
+    return m ? m[1] : s;
   }
 
   function deriveArrivalStatus(f) {
     if (f.cancelled) return "Cancelled";
     if (f.actual_in) return "Arrived";
     if (f.estimated_in && f.scheduled_in && f.estimated_in !== f.scheduled_in) return "Delayed";
-    if (f.status) return f.status;
-    return "Scheduled";
+    return f.status || "Scheduled";
   }
 
   function deriveDepartureStatus(f) {
     if (f.cancelled) return "Cancelled";
     if (f.actual_out) return "Departed";
     if (f.estimated_out && f.scheduled_out && f.estimated_out !== f.scheduled_out) return "Delayed";
-    if (f.status) return f.status;
-    return "Scheduled";
+    return f.status || "Scheduled";
   }
 
   function serialiseArrival(f) {
     return {
       number: flightNumber(f),
-      route: routeForArrival(f),
-      scheduledTime: scheduledForArrival(f),
+      route: airportCode(f.origin),
+      scheduledTime: f.scheduled_in || f.estimated_in || f.actual_in || null,
+      status: deriveArrivalStatus(f),
       estimatedTime: f.estimated_in || null,
-      actualTime: f.actual_in || null,
-      status: deriveArrivalStatus(f)
+      actualTime: f.actual_in || null
     };
   }
 
   function serialiseDeparture(f) {
     return {
       number: flightNumber(f),
-      route: routeForDeparture(f),
-      scheduledTime: scheduledForDeparture(f),
+      route: airportCode(f.destination),
+      scheduledTime: f.scheduled_out || f.estimated_out || f.actual_out || null,
+      status: deriveDepartureStatus(f),
       estimatedTime: f.estimated_out || null,
-      actualTime: f.actual_out || null,
-      status: deriveDepartureStatus(f)
+      actualTime: f.actual_out || null
     };
   }
 
@@ -89,12 +84,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    const now = new Date();
-    const start = new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString();
-    const end = new Date(now.getTime() + 8 * 60 * 60 * 1000).toISOString();
-
-    const arrivalsUrl = `${base}/airports/${airport.id}/flights/arrivals?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=1`;
-    const departuresUrl = `${base}/airports/${airport.id}/flights/departures?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=1`;
+    const arrivalsUrl = `${base}/airports/${airport.id}/flights/scheduled_arrivals?max_pages=1`;
+    const departuresUrl = `${base}/airports/${airport.id}/flights/scheduled_departures?max_pages=1`;
 
     const [arrivalsRaw, departuresRaw] = await Promise.all([
       getJson(arrivalsUrl),
@@ -102,14 +93,14 @@ export default async function handler(req, res) {
     ]);
 
     const arrivals = dedupe(
-      Array.isArray(arrivalsRaw.arrivals)
-        ? arrivalsRaw.arrivals.map(serialiseArrival)
+      Array.isArray(arrivalsRaw.scheduled_arrivals)
+        ? arrivalsRaw.scheduled_arrivals.map(serialiseArrival)
         : []
     );
 
     const departures = dedupe(
-      Array.isArray(departuresRaw.departures)
-        ? departuresRaw.departures.map(serialiseDeparture)
+      Array.isArray(departuresRaw.scheduled_departures)
+        ? departuresRaw.scheduled_departures.map(serialiseDeparture)
         : []
     );
 
@@ -135,7 +126,7 @@ export default async function handler(req, res) {
           },
           arrivals,
           departures,
-          warnings: []
+          warnings: ["Testing mode: Islamabad only using FlightAware scheduled airport board endpoints."]
         }
       ],
       totals: {
@@ -145,7 +136,7 @@ export default async function handler(req, res) {
         delayedPct: all.length ? Number(((delayed / all.length) * 100).toFixed(1)) : 0,
         cancelledPct: all.length ? Number(((cancelled / all.length) * 100).toFixed(1)) : 0
       },
-      warnings: ["Testing mode: Islamabad only to reduce FlightAware quota usage."]
+      warnings: []
     });
   } catch (error) {
     return res.status(500).json({

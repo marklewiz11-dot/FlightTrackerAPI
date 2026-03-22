@@ -1,172 +1,259 @@
-function fmtPct(value) {
-  return `${Number(value || 0).toFixed(1)}%`;
-}
+export default async function handler(req, res) {
+  const apiKey = "cmn1fzpdc0001k004gqkdnzkh";
 
-function metric(label, value) {
-  return `
-    <div class="metric">
-      <div class="metricLabel">${label}</div>
-      <div class="metricValue">${value}</div>
-    </div>
-  `;
-}
+  const base = "https://prod.api.market/api/v1/aedbx/aerodatabox";
+  const airports = [
+    { iata: "ISB", icao: "OPIS", name: "Islamabad" },
+    { iata: "LHE", icao: "OPLA", name: "Lahore" },
+    { iata: "KHI", icao: "OPKC", name: "Karachi" }
+  ];
 
-function statusClass(text) {
-  const s = String(text || "").toLowerCase();
-  if (s.includes("cancel")) return "bad";
-  if (s.includes("delay") || s.includes("revised")) return "warn";
-  if (s.includes("arrived") || s.includes("departed") || s.includes("boarding") || s.includes("enroute")) return "good";
-  return "neutral";
-}
+  async function getCoverage(icao) {
+    const response = await fetch(`${base}/health/services/airports/${icao}/feeds`, {
+      headers: {
+        "x-magicapi-key": apiKey,
+        accept: "application/json"
+      }
+    });
 
-function safeArray(v) {
-  return Array.isArray(v) ? v : [];
-}
-
-function metricSet(totals) {
-  return [
-    metric("Total Flights", totals.flights || 0),
-    metric("Delayed Flights", totals.delayed || 0),
-    metric("Cancelled Flights", totals.cancelled || 0),
-    metric("Delayed %", fmtPct(totals.delayedPct || 0)),
-    metric("Cancelled %", fmtPct(totals.cancelledPct || 0))
-  ].join("");
-}
-
-function shortTime(value) {
-  if (!value) return "—";
-
-  const str = String(value);
-
-  if (str.includes("T")) {
-    const match = str.match(/T(\d{2}:\d{2})/);
-    return match ? match[1] : str;
+    if (!response.ok) return null;
+    return response.json();
   }
 
-  const match = str.match(/(\d{2}:\d{2})/);
-  return match ? match[1] : str;
-}
-
-function displayRoute(flight) {
-  return (
-    flight.route ||
-    flight._rawMovementAirport ||
-    flight.airline ||
-    "—"
-  );
-}
-
-function displayStatus(flight) {
-  if (flight.status === "Revised" && flight.revisedTime) {
-    return `Delayed to ${shortTime(flight.revisedTime)}`;
+  function airportLabel(airport) {
+    if (!airport) return "—";
+    return (
+      airport.shortName ||
+      airport.municipalityName ||
+      airport.name ||
+      airport.iata ||
+      airport.icao ||
+      "—"
+    );
   }
 
-  if (flight.status === "Predicted" && flight.predictedTime) {
-    return `Predicted ${shortTime(flight.predictedTime)}`;
+  function movementQualityText(movement) {
+    const q = Array.isArray(movement?.quality) ? movement.quality : [];
+    if (q.includes("Live")) return "Live";
+    if (q.includes("Approximate")) return "Approximate";
+    if (q.includes("Basic")) return "Basic";
+    return "Unknown";
   }
 
-  if (flight.status === "Scheduled" && flight.quality) {
-    return "Scheduled";
+  function deriveStatus(flight, movement, direction) {
+    const raw = flight?.status || "Unknown";
+
+    if (movement?.runwayTime?.local) {
+      return direction === "arrival" ? "Arrived" : "Departed";
+    }
+
+    if (raw && raw !== "Unknown") {
+      return raw;
+    }
+
+    if (movement?.revisedTime?.local) {
+      return "Revised";
+    }
+
+    if (movement?.predictedTime?.local) {
+      return "Predicted";
+    }
+
+    if (movement?.scheduledTime?.local) {
+      return "Scheduled";
+    }
+
+    return "Unknown";
   }
 
-  return flight.status || "Unknown";
+  function serialiseFlight(flight, direction) {
+    const movement =
+      flight?.movement ||
+      (direction === "arrival" ? flight?.arrival : flight?.departure) ||
+      null;
+
+    const opposite =
+      direction === "arrival" ? flight?.departure || null : flight?.arrival || null;
+
+    const scheduledTime =
+      movement?.scheduledTime?.local ||
+      movement?.revisedTime?.local ||
+      movement?.predictedTime?.local ||
+      null;
+
+    return {
+      number:
+        flight?.number ||
+        flight?.callSign ||
+        (flight?.airline?.iata && flight?.number
+          ? `${flight.airline.iata}${flight.number}`
+          : null) ||
+        "—",
+      airline: flight?.airline?.name || "—",
+      route: airportLabel(opposite?.airport),
+      scheduledTime,
+      revisedTime: movement?.revisedTime?.local || null,
+      predictedTime: movement?.predictedTime?.local || null,
+      runwayTime: movement?.runwayTime?.local || null,
+      terminal: movement?.terminal || null,
+      gate: movement?.gate || null,
+      baggageBelt: movement?.baggageBelt || null,
+      aircraft: flight?.aircraft?.model || null,
+      status: deriveStatus(flight, movement, direction),
+      quality: movementQualityText(movement),
+      codeshare: flight?.codeshareStatus || null,
+      _rawMovementAirport: airportLabel(movement?.airport)
+    };
+  }
+
+  function dedupeFlights(list) {
+    const seen = new Set();
+
+    return list.filter((f) => {
+      const key = [
+        f.number || "",
+        f.route || "",
+        f.scheduledTime || "",
+        f.status || ""
+      ].join("|");
+
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  async function getAirport(airport) {
+    const url = new URL(`${base}/flights/airports/iata/${airport.iata}`);
+    url.searchParams.set("offsetMinutes", "0");
+    url.searchParams.set("durationMinutes", "720");
+    url.searchParams.set("direction", "Both");
+    url.searchParams.set("withCancelled", "true");
+    url.searchParams.set("withCodeshared", "false");
+    url.searchParams.set("withCargo", "true");
+    url.searchParams.set("withPrivate", "false");
+    url.searchParams.set("withLocation", "true");
+
+    const [fidsRes, coverage] = await Promise.all([
+      fetch(url.toString(), {
+        headers: {
+          "x-magicapi-key": apiKey,
+          accept: "application/json"
+        }
+      }),
+      getCoverage(airport.icao)
+    ]);
+
+    if (!fidsRes.ok) {
+      const text = await fidsRes.text();
+      throw new Error(`${airport.iata} failed: ${fidsRes.status} ${text}`);
+    }
+
+    const raw = await fidsRes.json();
+
+    let arrivals = Array.isArray(raw.arrivals)
+      ? raw.arrivals.map(f => serialiseFlight(f, "arrival"))
+      : [];
+
+    let departures = Array.isArray(raw.departures)
+      ? raw.departures.map(f => serialiseFlight(f, "departure"))
+      : [];
+
+    arrivals = dedupeFlights(arrivals);
+    departures = dedupeFlights(departures);
+
+    const all = [...arrivals, ...departures];
+
+    const delayed = all.filter(f => String(f.status).toLowerCase().includes("delay")).length;
+    const cancelled = all.filter(f => String(f.status).toLowerCase().includes("cancel")).length;
+
+    const warnings = [];
+
+    if (coverage && !Array.isArray(coverage)) {
+      const liveStatus = coverage?.liveFlightUpdatesFeed?.status;
+      const scheduleStatus = coverage?.flightSchedulesFeed?.status;
+
+      if (liveStatus && !["OK", "OKPartial"].includes(liveStatus)) {
+        warnings.push(`Live updates limited for ${airport.name}`);
+      }
+
+      if (scheduleStatus && !["OK", "OKPartial"].includes(scheduleStatus)) {
+        warnings.push(`Schedule feed limited for ${airport.name}`);
+      }
+    }
+
+    return {
+      airportCode: airport.iata,
+      airportName: airport.name,
+      lastUpdated: new Date().toISOString(),
+      totals: {
+        flights: all.length,
+        delayed,
+        cancelled,
+        delayedPct: all.length ? Number(((delayed / all.length) * 100).toFixed(1)) : 0,
+        cancelledPct: all.length ? Number(((cancelled / all.length) * 100).toFixed(1)) : 0,
+        arrivals: arrivals.length,
+        departures: departures.length
+      },
+      arrivals,
+      departures,
+      warnings
+    };
+  }
+
+  try {
+    const results = await Promise.allSettled(airports.map(getAirport));
+
+    const airportBlocks = [];
+    const warnings = [];
+
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        airportBlocks.push(result.value);
+        if (Array.isArray(result.value.warnings)) warnings.push(...result.value.warnings);
+      } else {
+        warnings.push(result.reason.message);
+      }
+    }
+
+    const totals = airportBlocks.reduce(
+      (acc, a) => {
+        acc.flights += a.totals.flights;
+        acc.delayed += a.totals.delayed;
+        acc.cancelled += a.totals.cancelled;
+        return acc;
+      },
+      { flights: 0, delayed: 0, cancelled: 0 }
+    );
+
+    const delayedPct = totals.flights
+      ? Number(((totals.delayed / totals.flights) * 100).toFixed(1))
+      : 0;
+
+    const cancelledPct = totals.flights
+      ? Number(((totals.cancelled / totals.flights) * 100).toFixed(1))
+      : 0;
+
+    res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=600");
+
+    return res.status(200).json({
+      generatedAt: new Date().toISOString(),
+      airports: airportBlocks,
+      totals: { ...totals, delayedPct, cancelledPct },
+      warnings
+    });
+  } catch (error) {
+    return res.status(500).json({
+      generatedAt: new Date().toISOString(),
+      airports: [],
+      totals: {
+        flights: 0,
+        delayed: 0,
+        cancelled: 0,
+        delayedPct: 0,
+        cancelledPct: 0
+      },
+      warnings: [error.message || "Failed to load AeroDataBox data."]
+    });
+  }
 }
-
-function rowHtml(flight) {
-  const status = displayStatus(flight);
-  const quality = flight.quality && flight.quality !== "Unknown"
-    ? ` <span class="muted">(${flight.quality})</span>`
-    : "";
-
-  return `
-    <tr>
-      <td>${flight.number || "—"}</td>
-      <td>${displayRoute(flight)}</td>
-      <td>${shortTime(flight.scheduledTime)}</td>
-      <td>
-        <span class="status ${statusClass(status)}">
-          <span class="dot"></span>${status}${quality}
-        </span>
-      </td>
-    </tr>
-  `;
-}
-
-function tableHtml(title, rows) {
-  return `
-    <div>
-      <div class="panelTitle">${title}</div>
-      <div class="tableWrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Flight</th>
-              <th>Route</th>
-              <th>Sched</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows.length ? rows.map(rowHtml).join("") : `<tr><td colspan="4">No data returned</td></tr>`}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  `;
-}
-
-function airportCard(airport) {
-  return `
-    <section class="airportCard">
-      <div class="airportHead">
-        <div>
-          <h2 class="airportName">${airport.airportName}</h2>
-          <div class="airportMeta">Arrivals ${airport.totals.arrivals} • Departures ${airport.totals.departures}</div>
-        </div>
-        <div class="muted">Updated ${new Date(airport.lastUpdated).toLocaleTimeString()}</div>
-      </div>
-
-      <div class="airportMetrics">
-        ${metricSet(airport.totals)}
-      </div>
-
-      ${(airport.warnings || []).length ? `<div class="notice" style="margin:0 18px 16px">${airport.warnings.join(" • ")}</div>` : ""}
-
-      <div class="split">
-        ${tableHtml("Arrivals", (airport.arrivals || []).slice(0, 20))}
-        ${tableHtml("Departures", (airport.departures || []).slice(0, 20))}
-      </div>
-    </section>
-  `;
-}
-
-async function load() {
-  const airportGrid = document.getElementById("airportGrid");
-  const nationalMetrics = document.getElementById("nationalMetrics");
-  const warnings = document.getElementById("warnings");
-  const lastUpdated = document.getElementById("lastUpdated");
-
-  airportGrid.innerHTML = `<div class="loading">Loading live flight data…</div>`;
-
-  const res = await fetch("/api/flights", { cache: "no-store" });
-  const data = await res.json();
-
-  const airports = safeArray(data.airports);
-  const totals = data.totals || { flights: 0, delayed: 0, cancelled: 0, delayedPct: 0, cancelledPct: 0 };
-
-  nationalMetrics.innerHTML = metricSet(totals);
-
-  const warningItems = safeArray(data.warnings);
-  warnings.innerHTML = warningItems.length
-    ? warningItems.map(w => `<div class="notice">${w}</div>`).join("")
-    : `<div class="notice">Live airport boards powered by AeroDataBox.</div>`;
-
-  lastUpdated.textContent = data.generatedAt
-    ? `Updated ${new Date(data.generatedAt).toLocaleString()}`
-    : "Updated just now";
-
-  airportGrid.innerHTML = airports.map(airportCard).join("");
-}
-
-load();
-setInterval(load, 5 * 60 * 1000);

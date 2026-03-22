@@ -7,38 +7,38 @@
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <div class="container">
+  <div class="shell">
     <header class="hero">
-      <div>
-        <div class="eyebrow">Operational dashboard</div>
+      <div class="heroCopy">
+        <div class="eyebrow">Live airport board</div>
         <h1>Pakistan Flight Tracker</h1>
         <p class="subtitle">
-          Live arrivals, departures, delays and cancellations for Islamabad, Lahore and Karachi
+          Flight board view for Pakistan airports with a UAE style dashboard layout
         </p>
       </div>
+
       <div class="heroBadges">
-        <span class="badge">AeroDataBox live API</span>
-        <span class="badge">Browser link ready</span>
-        <span class="badge">Dark FIDS style</span>
+        <span class="badge">FlightAware</span>
+        <span class="badge">Today + Tomorrow</span>
+        <span class="badge">Dark board style</span>
       </div>
     </header>
-    <section class="topGrid">
-      <div class="card">
-        <div class="cardHeader">
+
+    <section class="summaryCard">
+      <div class="summaryHeader">
+        <div>
           <h2>National Overview</h2>
-          <div id="lastUpdated" class="muted">Loading…</div>
+          <div class="summarySub" id="lastUpdated">Loading…</div>
         </div>
-        <div class="metrics" id="nationalMetrics"></div>
       </div>
-      <div class="card">
-        <div class="cardHeader">
-          <h2>Notes</h2>
-        </div>
-        <div id="warnings" class="noticeList"></div>
-      </div>
+      <div class="metricStrip" id="nationalMetrics"></div>
     </section>
+
+    <section id="warnings" class="warnings"></section>
+
     <main id="airportGrid" class="airportGrid"></main>
   </div>
+
   <script src="/app.js"></script>
 </body>
 </html>

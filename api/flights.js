@@ -21,13 +21,6 @@ export default async function handler(req, res) {
     return value.code_iata || value.code_icao || value.code || value.name || "—";
   }
 
-  function shortTime(value) {
-    if (!value) return null;
-    const s = String(value);
-    const m = s.match(/T(\d{2}:\d{2})/);
-    return m ? m[1] : s;
-  }
-
   function deriveArrivalStatus(f) {
     if (f.cancelled) return "Cancelled";
     if (f.actual_in) return "Arrived";
@@ -47,9 +40,9 @@ export default async function handler(req, res) {
       number: flightNumber(f),
       route: airportCode(f.origin),
       scheduledTime: f.scheduled_in || f.estimated_in || f.actual_in || null,
-      status: deriveArrivalStatus(f),
       estimatedTime: f.estimated_in || null,
-      actualTime: f.actual_in || null
+      actualTime: f.actual_in || null,
+      status: deriveArrivalStatus(f)
     };
   }
 
@@ -58,9 +51,9 @@ export default async function handler(req, res) {
       number: flightNumber(f),
       route: airportCode(f.destination),
       scheduledTime: f.scheduled_out || f.estimated_out || f.actual_out || null,
-      status: deriveDepartureStatus(f),
       estimatedTime: f.estimated_out || null,
-      actualTime: f.actual_out || null
+      actualTime: f.actual_out || null,
+      status: deriveDepartureStatus(f)
     };
   }
 
@@ -74,6 +67,29 @@ export default async function handler(req, res) {
     });
   }
 
+  function getPakistanTodayTomorrowBounds() {
+    const now = new Date();
+
+    const localParts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Karachi",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).formatToParts(now);
+
+    const y = localParts.find(p => p.type === "year").value;
+    const m = localParts.find(p => p.type === "month").value;
+    const d = localParts.find(p => p.type === "day").value;
+
+    const start = `${y}-${m}-${d}T00:00:00+05:00`;
+
+    const startDate = new Date(`${y}-${m}-${d}T00:00:00+05:00`);
+    const endDate = new Date(startDate.getTime() + 2 * 24 * 60 * 60 * 1000);
+    const end = endDate.toISOString().replace(".000Z", "Z");
+
+    return { start, end };
+  }
+
   async function getJson(url) {
     const r = await fetch(url, { headers: headers() });
     if (!r.ok) {
@@ -84,8 +100,13 @@ export default async function handler(req, res) {
   }
 
   try {
-    const arrivalsUrl = `${base}/airports/${airport.id}/flights/scheduled_arrivals?max_pages=1`;
-    const departuresUrl = `${base}/airports/${airport.id}/flights/scheduled_departures?max_pages=1`;
+    const { start, end } = getPakistanTodayTomorrowBounds();
+
+    const arrivalsUrl =
+      `${base}/airports/${airport.id}/flights/scheduled_arrivals?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=2`;
+
+    const departuresUrl =
+      `${base}/airports/${airport.id}/flights/scheduled_departures?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=2`;
 
     const [arrivalsRaw, departuresRaw] = await Promise.all([
       getJson(arrivalsUrl),
@@ -126,7 +147,7 @@ export default async function handler(req, res) {
           },
           arrivals,
           departures,
-          warnings: ["Testing mode: Islamabad only using FlightAware scheduled airport board endpoints."]
+          warnings: ["Window set to today and tomorrow in Pakistan time."]
         }
       ],
       totals: {

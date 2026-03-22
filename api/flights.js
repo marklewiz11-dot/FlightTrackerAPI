@@ -67,13 +67,8 @@ export default async function handler(req, res) {
   }
 
   function serialiseFlight(flight, direction) {
-    const movement =
-      flight?.movement ||
-      (direction === "arrival" ? flight?.arrival : flight?.departure) ||
-      null;
-
-    const opposite =
-      direction === "arrival" ? flight?.departure || null : flight?.arrival || null;
+    const movement = direction === "arrival" ? flight?.arrival : flight?.departure;
+    const opposite = direction === "arrival" ? flight?.departure : flight?.arrival;
 
     const scheduledTime =
       movement?.scheduledTime?.local ||
@@ -101,8 +96,7 @@ export default async function handler(req, res) {
       aircraft: flight?.aircraft?.model || null,
       status: deriveStatus(flight, movement, direction),
       quality: movementQualityText(movement),
-      codeshare: flight?.codeshareStatus || null,
-      _rawMovementAirport: airportLabel(movement?.airport)
+      codeshare: flight?.codeshareStatus || null
     };
   }
 
@@ -128,11 +122,12 @@ export default async function handler(req, res) {
     url.searchParams.set("offsetMinutes", "0");
     url.searchParams.set("durationMinutes", "720");
     url.searchParams.set("direction", "Both");
+    url.searchParams.set("withLeg", "true");
     url.searchParams.set("withCancelled", "true");
     url.searchParams.set("withCodeshared", "false");
     url.searchParams.set("withCargo", "true");
     url.searchParams.set("withPrivate", "false");
-    url.searchParams.set("withLocation", "true");
+    url.searchParams.set("withLocation", "false");
 
     const [fidsRes, coverage] = await Promise.all([
       fetch(url.toString(), {

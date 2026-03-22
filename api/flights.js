@@ -1,184 +1,133 @@
 export default async function handler(req, res) {
   const apiKey = "hn1UO6XF9P3DrZPwMPi5ABgWXEV3wrvF";
 
-  const base = "https://prod.api.market/api/v1/aedbx/aerodatabox";
+  const base = "https://aeroapi.flightaware.com/aeroapi";
   const airports = [
-    { iata: "ISB", icao: "OPIS", name: "Islamabad" },
-    { iata: "LHE", icao: "OPLA", name: "Lahore" },
-    { iata: "KHI", icao: "OPKC", name: "Karachi" }
+    { id: "OPIS", code: "ISB", name: "Islamabad" },
+    { id: "OPLA", code: "LHE", name: "Lahore" },
+    { id: "OPKC", code: "KHI", name: "Karachi" }
   ];
 
-  async function getCoverage(icao) {
-    const response = await fetch(`${base}/health/services/airports/${icao}/feeds`, {
-      headers: {
-        "x-magicapi-key": apiKey,
-        accept: "application/json"
-      }
-    });
-
-    if (!response.ok) return null;
-    return response.json();
-  }
-
-  function airportLabel(airport) {
-    if (!airport) return "—";
-    return (
-      airport.shortName ||
-      airport.municipalityName ||
-      airport.name ||
-      airport.iata ||
-      airport.icao ||
-      "—"
-    );
-  }
-
-  function movementQualityText(movement) {
-    const q = Array.isArray(movement?.quality) ? movement.quality : [];
-    if (q.includes("Live")) return "Live";
-    if (q.includes("Approximate")) return "Approximate";
-    if (q.includes("Basic")) return "Basic";
-    return "Unknown";
-  }
-
-  function deriveStatus(flight, movement, direction) {
-    const raw = flight?.status || "Unknown";
-
-    if (movement?.runwayTime?.local) {
-      return direction === "arrival" ? "Arrived" : "Departed";
-    }
-
-    if (raw && raw !== "Unknown") {
-      return raw;
-    }
-
-    if (movement?.revisedTime?.local) {
-      return "Revised";
-    }
-
-    if (movement?.predictedTime?.local) {
-      return "Predicted";
-    }
-
-    if (movement?.scheduledTime?.local) {
-      return "Scheduled";
-    }
-
-    return "Unknown";
-  }
-
-  function serialiseFlight(flight, direction) {
-    const movement = direction === "arrival" ? flight?.arrival : flight?.departure;
-    const opposite = direction === "arrival" ? flight?.departure : flight?.arrival;
-
-    const scheduledTime =
-      movement?.scheduledTime?.local ||
-      movement?.revisedTime?.local ||
-      movement?.predictedTime?.local ||
-      null;
-
+  function headers() {
     return {
-      number:
-        flight?.number ||
-        flight?.callSign ||
-        (flight?.airline?.iata && flight?.number
-          ? `${flight.airline.iata}${flight.number}`
-          : null) ||
-        "—",
-      airline: flight?.airline?.name || "—",
-      route: airportLabel(opposite?.airport),
-      scheduledTime,
-      revisedTime: movement?.revisedTime?.local || null,
-      predictedTime: movement?.predictedTime?.local || null,
-      runwayTime: movement?.runwayTime?.local || null,
-      terminal: movement?.terminal || null,
-      gate: movement?.gate || null,
-      baggageBelt: movement?.baggageBelt || null,
-      aircraft: flight?.aircraft?.model || null,
-      status: deriveStatus(flight, movement, direction),
-      quality: movementQualityText(movement),
-      codeshare: flight?.codeshareStatus || null
+      "x-apikey": apiKey,
+      "accept": "application/json"
     };
   }
 
-  function dedupeFlights(list) {
+  function flightNumber(f) {
+    return f.ident_iata || f.ident || "—";
+  }
+
+  function routeForArrival(f) {
+    return f.origin_iata || f.origin || "—";
+  }
+
+  function routeForDeparture(f) {
+    return f.destination_iata || f.destination || "—";
+  }
+
+  function scheduledForArrival(f) {
+    return f.scheduled_in || f.estimated_in || f.actual_in || null;
+  }
+
+  function scheduledForDeparture(f) {
+    return f.scheduled_out || f.estimated_out || f.actual_out || null;
+  }
+
+  function deriveArrivalStatus(f) {
+    if (f.cancelled) return "Cancelled";
+    if (f.actual_in) return "Arrived";
+    if (f.estimated_in && f.scheduled_in && f.estimated_in !== f.scheduled_in) return "Delayed";
+    if (f.status) return f.status;
+    return "Scheduled";
+  }
+
+  function deriveDepartureStatus(f) {
+    if (f.cancelled) return "Cancelled";
+    if (f.actual_out) return "Departed";
+    if (f.estimated_out && f.scheduled_out && f.estimated_out !== f.scheduled_out) return "Delayed";
+    if (f.status) return f.status;
+    return "Scheduled";
+  }
+
+  function serialiseArrival(f) {
+    return {
+      number: flightNumber(f),
+      route: routeForArrival(f),
+      scheduledTime: scheduledForArrival(f),
+      estimatedTime: f.estimated_in || null,
+      actualTime: f.actual_in || null,
+      status: deriveArrivalStatus(f)
+    };
+  }
+
+  function serialiseDeparture(f) {
+    return {
+      number: flightNumber(f),
+      route: routeForDeparture(f),
+      scheduledTime: scheduledForDeparture(f),
+      estimatedTime: f.estimated_out || null,
+      actualTime: f.actual_out || null,
+      status: deriveDepartureStatus(f)
+    };
+  }
+
+  function dedupe(list) {
     const seen = new Set();
-
     return list.filter((f) => {
-      const key = [
-        f.number || "",
-        f.route || "",
-        f.scheduledTime || "",
-        f.status || ""
-      ].join("|");
-
+      const key = [f.number, f.route, f.scheduledTime].join("|");
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
   }
 
-  async function getAirport(airport) {
-    const url = new URL(`${base}/flights/airports/iata/${airport.iata}`);
-    url.searchParams.set("offsetMinutes", "0");
-    url.searchParams.set("durationMinutes", "720");
-    url.searchParams.set("direction", "Both");
-    url.searchParams.set("withLeg", "true");
-    url.searchParams.set("withCancelled", "true");
-    url.searchParams.set("withCodeshared", "false");
-    url.searchParams.set("withCargo", "true");
-    url.searchParams.set("withPrivate", "false");
-    url.searchParams.set("withLocation", "false");
+  async function getJson(url) {
+    const r = await fetch(url, { headers: headers() });
+    if (!r.ok) {
+      const text = await r.text();
+      throw new Error(`${r.status} ${text}`);
+    }
+    return r.json();
+  }
 
-    const [fidsRes, coverage] = await Promise.all([
-      fetch(url.toString(), {
-        headers: {
-          "x-magicapi-key": apiKey,
-          accept: "application/json"
-        }
-      }),
-      getCoverage(airport.icao)
+  async function getAirportBoard(airport) {
+    const now = new Date();
+    const start = new Date(now.getTime() - 3 * 60 * 60 * 1000).toISOString();
+    const end = new Date(now.getTime() + 9 * 60 * 60 * 1000).toISOString();
+
+    const urls = {
+      arrivals: `${base}/airports/${airport.id}/flights/arrivals?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=1`,
+      departures: `${base}/airports/${airport.id}/flights/departures?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=1`,
+      scheduledArrivals: `${base}/airports/${airport.id}/flights/scheduled_arrivals?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=1`,
+      scheduledDepartures: `${base}/airports/${airport.id}/flights/scheduled_departures?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=1`
+    };
+
+    const [arrivalsRaw, departuresRaw, schedArrivalsRaw, schedDeparturesRaw] =
+      await Promise.all([
+        getJson(urls.arrivals),
+        getJson(urls.departures),
+        getJson(urls.scheduledArrivals),
+        getJson(urls.scheduledDepartures)
+      ]);
+
+    const arrivals = dedupe([
+      ...(Array.isArray(arrivalsRaw.arrivals) ? arrivalsRaw.arrivals.map(serialiseArrival) : []),
+      ...(Array.isArray(schedArrivalsRaw.scheduled_arrivals) ? schedArrivalsRaw.scheduled_arrivals.map(serialiseArrival) : [])
     ]);
 
-    if (!fidsRes.ok) {
-      const text = await fidsRes.text();
-      throw new Error(`${airport.iata} failed: ${fidsRes.status} ${text}`);
-    }
-
-    const raw = await fidsRes.json();
-
-    let arrivals = Array.isArray(raw.arrivals)
-      ? raw.arrivals.map(f => serialiseFlight(f, "arrival"))
-      : [];
-
-    let departures = Array.isArray(raw.departures)
-      ? raw.departures.map(f => serialiseFlight(f, "departure"))
-      : [];
-
-    arrivals = dedupeFlights(arrivals);
-    departures = dedupeFlights(departures);
+    const departures = dedupe([
+      ...(Array.isArray(departuresRaw.departures) ? departuresRaw.departures.map(serialiseDeparture) : []),
+      ...(Array.isArray(schedDeparturesRaw.scheduled_departures) ? schedDeparturesRaw.scheduled_departures.map(serialiseDeparture) : [])
+    ]);
 
     const all = [...arrivals, ...departures];
-
     const delayed = all.filter(f => String(f.status).toLowerCase().includes("delay")).length;
     const cancelled = all.filter(f => String(f.status).toLowerCase().includes("cancel")).length;
 
-    const warnings = [];
-
-    if (coverage && !Array.isArray(coverage)) {
-      const liveStatus = coverage?.liveFlightUpdatesFeed?.status;
-      const scheduleStatus = coverage?.flightSchedulesFeed?.status;
-
-      if (liveStatus && !["OK", "OKPartial"].includes(liveStatus)) {
-        warnings.push(`Live updates limited for ${airport.name}`);
-      }
-
-      if (scheduleStatus && !["OK", "OKPartial"].includes(scheduleStatus)) {
-        warnings.push(`Schedule feed limited for ${airport.name}`);
-      }
-    }
-
     return {
-      airportCode: airport.iata,
+      airportCode: airport.code,
       airportName: airport.name,
       lastUpdated: new Date().toISOString(),
       totals: {
@@ -192,12 +141,12 @@ export default async function handler(req, res) {
       },
       arrivals,
       departures,
-      warnings
+      warnings: []
     };
   }
 
   try {
-    const results = await Promise.allSettled(airports.map(getAirport));
+    const results = await Promise.allSettled(airports.map(getAirportBoard));
 
     const airportBlocks = [];
     const warnings = [];
@@ -205,7 +154,6 @@ export default async function handler(req, res) {
     for (const result of results) {
       if (result.status === "fulfilled") {
         airportBlocks.push(result.value);
-        if (Array.isArray(result.value.warnings)) warnings.push(...result.value.warnings);
       } else {
         warnings.push(result.reason.message);
       }
@@ -221,20 +169,19 @@ export default async function handler(req, res) {
       { flights: 0, delayed: 0, cancelled: 0 }
     );
 
-    const delayedPct = totals.flights
-      ? Number(((totals.delayed / totals.flights) * 100).toFixed(1))
-      : 0;
-
-    const cancelledPct = totals.flights
-      ? Number(((totals.cancelled / totals.flights) * 100).toFixed(1))
-      : 0;
+    const delayedPct = totals.flights ? Number(((totals.delayed / totals.flights) * 100).toFixed(1)) : 0;
+    const cancelledPct = totals.flights ? Number(((totals.cancelled / totals.flights) * 100).toFixed(1)) : 0;
 
     res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=600");
 
     return res.status(200).json({
       generatedAt: new Date().toISOString(),
       airports: airportBlocks,
-      totals: { ...totals, delayedPct, cancelledPct },
+      totals: {
+        ...totals,
+        delayedPct,
+        cancelledPct
+      },
       warnings
     });
   } catch (error) {
@@ -248,7 +195,7 @@ export default async function handler(req, res) {
         delayedPct: 0,
         cancelledPct: 0
       },
-      warnings: [error.message || "Failed to load AeroDataBox data."]
+      warnings: [error.message || "Failed to load FlightAware data."]
     });
   }
 }

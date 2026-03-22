@@ -1,5 +1,5 @@
 export default async function handler(req, res) {
-  const apiKey = "hn1UO6XF9P3DrZPwMPi5ABgWXEV3wrvF";
+  const apiKey = "PASTE_YOUR_FLIGHTAWARE_KEY_HERE";
 
   const base = "https://aeroapi.flightaware.com/aeroapi";
   const airport = { id: "OPIS", code: "ISB", name: "Islamabad" };
@@ -21,25 +21,48 @@ export default async function handler(req, res) {
     return value.code_iata || value.code_icao || value.code || value.name || "—";
   }
 
+  function toMillis(value) {
+    if (!value) return null;
+    const t = new Date(value).getTime();
+    return Number.isNaN(t) ? null : t;
+  }
+
+  function isMeaningfullyDelayed(scheduled, estimated) {
+    const s = toMillis(scheduled);
+    const e = toMillis(estimated);
+    if (s == null || e == null) return false;
+
+    const diffMinutes = (e - s) / 60000;
+    return diffMinutes >= 10;
+  }
+
   function deriveArrivalStatus(f) {
+    const raw = String(f.status || "").toLowerCase();
+
     if (f.cancelled) return "Cancelled";
     if (f.actual_in) return "Arrived";
-    if (f.estimated_in && f.scheduled_in && f.estimated_in !== f.scheduled_in) return "Delayed";
-    return f.status || "Scheduled";
+    if (raw.includes("delay")) return "Delayed";
+    if (isMeaningfullyDelayed(f.scheduled_in, f.estimated_in)) return "Delayed";
+
+    return "Scheduled";
   }
 
   function deriveDepartureStatus(f) {
+    const raw = String(f.status || "").toLowerCase();
+
     if (f.cancelled) return "Cancelled";
     if (f.actual_out) return "Departed";
-    if (f.estimated_out && f.scheduled_out && f.estimated_out !== f.scheduled_out) return "Delayed";
-    return f.status || "Scheduled";
+    if (raw.includes("delay")) return "Delayed";
+    if (isMeaningfullyDelayed(f.scheduled_out, f.estimated_out)) return "Delayed";
+
+    return "Scheduled";
   }
 
   function serialiseArrival(f) {
     return {
       number: flightNumber(f),
       route: airportCode(f.origin),
-      scheduledTime: f.scheduled_in || f.estimated_in || f.actual_in || null,
+      scheduledTime: f.scheduled_in || null,
       estimatedTime: f.estimated_in || null,
       actualTime: f.actual_in || null,
       status: deriveArrivalStatus(f)
@@ -50,7 +73,7 @@ export default async function handler(req, res) {
     return {
       number: flightNumber(f),
       route: airportCode(f.destination),
-      scheduledTime: f.scheduled_out || f.estimated_out || f.actual_out || null,
+      scheduledTime: f.scheduled_out || null,
       estimatedTime: f.estimated_out || null,
       actualTime: f.actual_out || null,
       status: deriveDepartureStatus(f)
@@ -126,8 +149,8 @@ export default async function handler(req, res) {
     );
 
     const all = [...arrivals, ...departures];
-    const delayed = all.filter(f => String(f.status).toLowerCase().includes("delay")).length;
-    const cancelled = all.filter(f => String(f.status).toLowerCase().includes("cancel")).length;
+    const delayed = all.filter(f => String(f.status).toLowerCase() === "delayed").length;
+    const cancelled = all.filter(f => String(f.status).toLowerCase() === "cancelled").length;
 
     return res.status(200).json({
       generatedAt: new Date().toISOString(),
@@ -147,7 +170,7 @@ export default async function handler(req, res) {
           },
           arrivals,
           departures,
-          warnings: ["Window set to today and tomorrow in Pakistan time."]
+          warnings: ["Delayed is shown only when explicitly delayed or at least 10 minutes later than scheduled."]
         }
       ],
       totals: {

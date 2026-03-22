@@ -33,16 +33,27 @@ function metricSet(totals) {
   ].join("");
 }
 
-function shortTime(value) {
+function pakistanTime(value) {
   if (!value) return "—";
-  const str = String(value);
-  const match = str.match(/T(\d{2}:\d{2})/);
-  return match ? match[1] : str;
+
+  try {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "—";
+
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Karachi",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    }).format(date);
+  } catch {
+    return "—";
+  }
 }
 
 function displayStatus(flight) {
   if (String(flight.status).toLowerCase() === "delayed" && flight.estimatedTime) {
-    return `Delayed to ${shortTime(flight.estimatedTime)}`;
+    return `Delayed to ${pakistanTime(flight.estimatedTime)}`;
   }
   return flight.status || "Unknown";
 }
@@ -54,7 +65,7 @@ function rowHtml(flight) {
     <tr>
       <td class="flightCol">${flight.number || "—"}</td>
       <td class="routeCol">${flight.route || "—"}</td>
-      <td class="timeCol">${shortTime(flight.scheduledTime)}</td>
+      <td class="timeCol">${pakistanTime(flight.scheduledTime)}</td>
       <td>
         <span class="statusPill ${statusClass(status)}">
           <span class="dot"></span>${status}
@@ -95,7 +106,12 @@ function airportCard(airport) {
           <h2 class="airportName">${airport.airportName}</h2>
           <div class="airportMeta">Arrivals ${airport.totals.arrivals} • Departures ${airport.totals.departures}</div>
         </div>
-        <div class="muted">Updated ${new Date(airport.lastUpdated).toLocaleTimeString()}</div>
+        <div class="muted">Updated ${new Intl.DateTimeFormat("en-GB", {
+          timeZone: "Asia/Karachi",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false
+        }).format(new Date(airport.lastUpdated))}</div>
       </div>
 
       <div class="airportMetrics">
@@ -140,7 +156,15 @@ async function load() {
     : "";
 
   lastUpdated.textContent = data.generatedAt
-    ? `Updated ${new Date(data.generatedAt).toLocaleString()}`
+    ? `Updated ${new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Asia/Karachi",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
+      }).format(new Date(data.generatedAt))} PKT`
     : "Updated just now";
 
   airportGrid.innerHTML = airports.map(airportCard).join("");

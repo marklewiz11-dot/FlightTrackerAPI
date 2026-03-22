@@ -3,40 +3,93 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Pakistan Flight Tracker</title>
+  <title>Pakistan Flight Tracking</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
   <div class="shell">
-    <header class="hero">
-      <div class="heroCopy">
-        <div class="eyebrow">Live airport board</div>
-        <h1>Pakistan Flight Tracker</h1>
-        <p class="subtitle">
-          Flight board view for Pakistan airports with a UAE style dashboard layout
-        </p>
+    <header class="topbar">
+      <div class="brand">
+        <div class="brandIcon">✈</div>
+        <div>
+          <div class="brandTitle">Pakistan Flight Tracking</div>
+          <div class="brandSub">Operations Dashboard <span class="liveDot"></span> LIVE</div>
+        </div>
       </div>
 
-      <div class="heroBadges">
-        <span class="badge">FlightAware</span>
-        <span class="badge">Today + Tomorrow</span>
-        <span class="badge">Dark board style</span>
+      <div class="topbarRight">
+        <div class="cacheInfo" id="cacheInfo">Cache: just now</div>
       </div>
     </header>
 
-    <section class="summaryCard">
-      <div class="summaryHeader">
-        <div>
-          <h2>National Overview</h2>
-          <div class="summarySub" id="lastUpdated">Loading…</div>
+    <section class="kpis" id="kpis"></section>
+
+    <section class="filtersCard">
+      <div class="filtersTitle">Filters</div>
+      <div class="filtersGrid">
+        <div class="filterGroup">
+          <label>Day</label>
+          <div class="segmented">
+            <button class="seg active" data-day="today">Today</button>
+            <button class="seg" data-day="tomorrow">Tomorrow</button>
+            <button class="seg" data-day="all">All</button>
+          </div>
+        </div>
+
+        <div class="filterGroup">
+          <label>Direction</label>
+          <select id="directionFilter">
+            <option value="Both">Both</option>
+            <option value="Departure">Departure</option>
+            <option value="Arrival">Arrival</option>
+          </select>
+        </div>
+
+        <div class="filterGroup">
+          <label>Airport</label>
+          <select id="airportFilter"></select>
+        </div>
+
+        <div class="filterGroup">
+          <label>Airline</label>
+          <select id="airlineFilter"></select>
+        </div>
+
+        <div class="filterGroup">
+          <label>Status</label>
+          <select id="statusFilter"></select>
         </div>
       </div>
-      <div class="metricStrip" id="nationalMetrics"></div>
     </section>
 
-    <section id="warnings" class="warnings"></section>
+    <section class="tableCard">
+      <div class="tableToolbar">
+        <div class="tab active">Flights <span id="flightCount">0</span></div>
+      </div>
 
-    <main id="airportGrid" class="airportGrid"></main>
+      <div id="warnings" class="warnings"></div>
+
+      <div class="tableWrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Flight</th>
+              <th>Airline</th>
+              <th>Origin</th>
+              <th>Dest</th>
+              <th>Dep</th>
+              <th>Arr</th>
+              <th>Status</th>
+              <th>Delay</th>
+              <th>A/C</th>
+              <th>Type</th>
+              <th>Div</th>
+            </tr>
+          </thead>
+          <tbody id="flightRows"></tbody>
+        </table>
+      </div>
+    </section>
   </div>
 
   <script src="/app.js"></script>

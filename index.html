@@ -19,6 +19,7 @@
 
       <div class="topbarRight">
         <button class="topbarBtn topbarBtnWarning" id="instructionsBtn">Instructions</button>
+        <button class="topbarBtn topbarBtnSuccess" id="airlineStatusBtn">Airline Status</button>
 
         <div class="cacheWrap">
           <div class="cacheRow">
@@ -41,6 +42,23 @@
     </header>
 
     <section class="kpis" id="kpis"></section>
+
+    <section class="crisisGrid">
+      <div class="crisisCard">
+        <div class="crisisTitle">Disruption Snapshot</div>
+        <div class="crisisStats" id="crisisStats"></div>
+      </div>
+
+      <div class="crisisCard">
+        <div class="crisisTitle">Next Outbound Hubs</div>
+        <div id="hubOptions"></div>
+      </div>
+
+      <div class="crisisCard">
+        <div class="crisisTitle">Airport Health</div>
+        <div id="airportHealth"></div>
+      </div>
+    </section>
 
     <section class="filtersCard">
       <div class="sectionHead">
@@ -147,6 +165,16 @@
         <button class="closeBtn" id="closeInstructionsBtn">Close</button>
       </div>
       <div class="briefingBody" id="instructionsBody"></div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="airlineStatusModal">
+    <div class="modalCard">
+      <div class="modalHead">
+        <div class="modalTitle">Official Airline Status Links</div>
+        <button class="closeBtn" id="closeAirlineStatusBtn">Close</button>
+      </div>
+      <div class="briefingBody" id="airlineStatusBody"></div>
     </div>
   </div>
 

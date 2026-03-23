@@ -11,52 +11,36 @@ export default async function handler(req, res) {
   const airlineMap = {
     PIA: "Pakistan International Airlines",
     PK: "Pakistan International Airlines",
-
     PA: "Airblue",
     ABQ: "Airblue",
-
     ER: "SereneAir",
     SEP: "SereneAir",
-
     PF: "AirSial",
     SIF: "AirSial",
-
     "9P": "Fly Jinnah",
     FJL: "Fly Jinnah",
-
     EK: "Emirates",
     UAE: "Emirates",
-
     QR: "Qatar Airways",
     QTR: "Qatar Airways",
-
     EY: "Etihad Airways",
     ETD: "Etihad Airways",
-
     BA: "British Airways",
     BAW: "British Airways",
-
     TK: "Turkish Airlines",
     THY: "Turkish Airlines",
-
     SV: "Saudia",
     SVA: "Saudia",
-
     WY: "Oman Air",
     OMA: "Oman Air",
-
     FZ: "flydubai",
     FDB: "flydubai",
-
     TG: "Thai Airways",
     THA: "Thai Airways",
-
     G9: "Air Arabia",
     ABY: "Air Arabia",
-
     J9: "Jazeera Airways",
     JZR: "Jazeera Airways",
-
     CI: "China Airlines",
     CAL: "China Airlines"
   };
@@ -484,6 +468,41 @@ export default async function handler(req, res) {
     return r.json();
   }
 
+  async function fetchWindowForAirports(airportIds, start, end, maxPages = 4) {
+    const allFlights = [];
+
+    for (const airportId of airportIds) {
+      const airport = AIRPORTS[airportId];
+
+      const arrivalsUrl =
+        `${base}/airports/${airportId}/flights/scheduled_arrivals?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=${maxPages}`;
+
+      const departuresUrl =
+        `${base}/airports/${airportId}/flights/scheduled_departures?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=${maxPages}`;
+
+      const [arrivalsRaw, departuresRaw] = await Promise.all([
+        getJson(arrivalsUrl),
+        getJson(departuresUrl)
+      ]);
+
+      const arrivals = dedupe(
+        Array.isArray(arrivalsRaw.scheduled_arrivals)
+          ? arrivalsRaw.scheduled_arrivals.map((f) => serialiseArrival(f, airport))
+          : []
+      );
+
+      const departures = dedupe(
+        Array.isArray(departuresRaw.scheduled_departures)
+          ? departuresRaw.scheduled_departures.map((f) => serialiseDeparture(f, airport))
+          : []
+      );
+
+      allFlights.push(...arrivals, ...departures);
+    }
+
+    return dedupe(allFlights);
+  }
+
   try {
     const requestedAirport = String(req.query.airport || "ALL").toUpperCase();
     const includeMinor = String(req.query.includeMinor || "false").toLowerCase() === "true";
@@ -519,38 +538,7 @@ export default async function handler(req, res) {
 
     if (trackerMode === "cancelled") {
       const { start, end, baseStart } = getCancelledTrackerWindow();
-      const allFlights = [];
-
-      for (const airportId of airportIds) {
-        const airport = AIRPORTS[airportId];
-
-        const arrivalsUrl =
-          `${base}/airports/${airportId}/flights/scheduled_arrivals?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=6`;
-
-        const departuresUrl =
-          `${base}/airports/${airportId}/flights/scheduled_departures?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=6`;
-
-        const [arrivalsRaw, departuresRaw] = await Promise.all([
-          getJson(arrivalsUrl),
-          getJson(departuresUrl)
-        ]);
-
-        const arrivals = dedupe(
-          Array.isArray(arrivalsRaw.scheduled_arrivals)
-            ? arrivalsRaw.scheduled_arrivals.map((f) => serialiseArrival(f, airport))
-            : []
-        );
-
-        const departures = dedupe(
-          Array.isArray(departuresRaw.scheduled_departures)
-            ? departuresRaw.scheduled_departures.map((f) => serialiseDeparture(f, airport))
-            : []
-        );
-
-        allFlights.push(...arrivals, ...departures);
-      }
-
-      const dedupedFlights = dedupe(allFlights);
+      const dedupedFlights = await fetchWindowForAirports(airportIds, start, end, 6);
       const scopedFlights = includeMinor ? dedupedFlights : dedupedFlights.filter((f) => f.isMajor);
       const cancelledFlights = scopedFlights.filter((f) => f.status === "Cancelled");
       const days = buildTrackerDays(cancelledFlights, baseStart);
@@ -569,38 +557,7 @@ export default async function handler(req, res) {
     const requestedDay = String(req.query.day || "today").toLowerCase();
     const { start, end } = getPakistanWindow(requestedDay);
 
-    const allFlights = [];
-
-    for (const airportId of airportIds) {
-      const airport = AIRPORTS[airportId];
-
-      const arrivalsUrl =
-        `${base}/airports/${airportId}/flights/scheduled_arrivals?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=4`;
-
-      const departuresUrl =
-        `${base}/airports/${airportId}/flights/scheduled_departures?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=4`;
-
-      const [arrivalsRaw, departuresRaw] = await Promise.all([
-        getJson(arrivalsUrl),
-        getJson(departuresUrl)
-      ]);
-
-      const arrivals = dedupe(
-        Array.isArray(arrivalsRaw.scheduled_arrivals)
-          ? arrivalsRaw.scheduled_arrivals.map((f) => serialiseArrival(f, airport))
-          : []
-      );
-
-      const departures = dedupe(
-        Array.isArray(departuresRaw.scheduled_departures)
-          ? departuresRaw.scheduled_departures.map((f) => serialiseDeparture(f, airport))
-          : []
-      );
-
-      allFlights.push(...arrivals, ...departures);
-    }
-
-    const dedupedFlights = dedupe(allFlights);
+    const dedupedFlights = await fetchWindowForAirports(airportIds, start, end, 4);
     const majorFlights = dedupedFlights.filter((f) => f.isMajor);
     const flights = includeMinor ? dedupedFlights : majorFlights;
 

@@ -5,7 +5,7 @@ let state = {
   airport: "ALL",
   airline: "All",
   status: "All",
-  includeMinor: false,
+  includeMinor: true,
   timezoneMode: "PKT",
   cacheSeconds: 60,
   cacheRemaining: 60
@@ -47,16 +47,6 @@ function zonedDateParts(value) {
   };
 }
 
-function pakistanDateOnly(value) {
-  const d = new Date(value);
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Karachi",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).format(d);
-}
-
 function safeArray(v) {
   return Array.isArray(v) ? v : [];
 }
@@ -72,30 +62,12 @@ function statusClass(status) {
 function renderKpis(summary) {
   const el = document.getElementById("kpis");
   el.innerHTML = `
-    <div class="kpi">
-      <div class="kpiLabel">Total Flights</div>
-      <div class="kpiValue">${summary.totalFlights || 0}</div>
-    </div>
-    <div class="kpi">
-      <div class="kpiLabel">Cancelled</div>
-      <div class="kpiValue">${summary.cancelled || 0}</div>
-    </div>
-    <div class="kpi">
-      <div class="kpiLabel">Diverted</div>
-      <div class="kpiValue">${summary.diverted || 0}</div>
-    </div>
-    <div class="kpi">
-      <div class="kpiLabel">Delayed >60m</div>
-      <div class="kpiValue">${summary.delayed60 || 0}</div>
-    </div>
-    <div class="kpi">
-      <div class="kpiLabel">Pre dep Delays</div>
-      <div class="kpiValue">${summary.preDepDelays || 0}</div>
-    </div>
-    <div class="kpi">
-      <div class="kpiLabel">Avg Delay</div>
-      <div class="kpiValue">${summary.avgDelayMinutes || 0}m</div>
-    </div>
+    <div class="kpi"><div class="kpiLabel">Total Flights</div><div class="kpiValue">${summary.totalFlights || 0}</div></div>
+    <div class="kpi"><div class="kpiLabel">Cancelled</div><div class="kpiValue">${summary.cancelled || 0}</div></div>
+    <div class="kpi"><div class="kpiLabel">Diverted</div><div class="kpiValue">${summary.diverted || 0}</div></div>
+    <div class="kpi"><div class="kpiLabel">Delayed >60m</div><div class="kpiValue">${summary.delayed60 || 0}</div></div>
+    <div class="kpi"><div class="kpiLabel">Pre dep Delays</div><div class="kpiValue">${summary.preDepDelays || 0}</div></div>
+    <div class="kpi"><div class="kpiLabel">Avg Delay</div><div class="kpiValue">${summary.avgDelayMinutes || 0}m</div></div>
   `;
 }
 
@@ -132,32 +104,8 @@ function displayTime(value) {
   return zonedDateParts(value).time;
 }
 
-function dayFilter(rows) {
-  if (state.day === "all") return rows;
-
-  const now = new Date();
-  const today = pakistanDateOnly(now);
-  const tomorrow = pakistanDateOnly(new Date(now.getTime() + 24 * 60 * 60 * 1000));
-
-  return rows.filter((row) => {
-    const primary = row.direction === "Departure"
-      ? (row.scheduledDep || row.estimatedDep || row.actualDep || row.bestDep)
-      : (row.scheduledArr || row.estimatedArr || row.actualArr || row.bestArr);
-
-    if (!primary) return false;
-
-    const date = pakistanDateOnly(primary);
-
-    if (state.day === "today") return date === today;
-    if (state.day === "tomorrow") return date === tomorrow;
-    return true;
-  });
-}
-
 function applyFilters(rows) {
   let out = [...rows];
-
-  out = dayFilter(out);
 
   if (state.direction !== "Both") {
     out = out.filter((r) => r.direction === state.direction);
@@ -195,9 +143,7 @@ function renderRows(rows) {
 
   tbody.innerHTML = rows.map((row) => `
     <tr>
-      <td>
-        <div class="flightCell">${row.number}</div>
-      </td>
+      <td><div class="flightCell">${row.number}</div></td>
       <td title="${row.airline || ""}">${row.airline || "—"}</td>
       <td>${row.origin || "—"}</td>
       <td>${row.destination || "—"}</td>
@@ -222,60 +168,6 @@ function refreshView() {
   renderRows(rows);
 }
 
-function resetFilters() {
-  state.day = "today";
-  state.direction = "Both";
-  state.airport = "ALL";
-  state.airline = "All";
-  state.status = "All";
-  state.includeMinor = false;
-
-  document.querySelectorAll(".seg").forEach((x) => {
-    x.classList.toggle("active", x.dataset.day === "today");
-  });
-
-  document.getElementById("directionFilter").value = "Both";
-  document.getElementById("airportFilter").value = "ALL";
-  document.getElementById("airlineFilter").value = "All";
-  document.getElementById("statusFilter").value = "All";
-  document.getElementById("minorCarrierToggle").checked = false;
-
-  load();
-}
-
-function exportRows() {
-  if (!state.raw) return;
-
-  const rows = applyFilters(state.raw.flights || []);
-  const headers = ["Flight", "Airline", "Origin", "Destination", "Departure", "Arrival", "Status", "Delay", "Aircraft", "Type", "Diverted"];
-
-  const lines = rows.map((row) => [
-    row.number || "",
-    row.airline || "",
-    row.origin || "",
-    row.destination || "",
-    displayTime(bestDepTime(row)),
-    displayTime(bestArrTime(row)),
-    row.status || "",
-    delayText(row),
-    row.aircraft || "",
-    row.type || "",
-    row.diverted ? "Yes" : ""
-  ]);
-
-  const csv = [headers, ...lines]
-    .map((line) => line.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))
-    .join("\n");
-
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "pakistan-flight-board.csv";
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 function updateCacheUi() {
   const total = Math.max(1, state.cacheSeconds || 60);
   const remaining = Math.max(0, state.cacheRemaining);
@@ -284,8 +176,11 @@ function updateCacheUi() {
   const minutes = Math.floor(remaining / 60);
   const seconds = String(remaining % 60).padStart(2, "0");
 
-  document.getElementById("cacheCountdown").textContent = `${minutes}:${seconds}`;
-  document.getElementById("cacheBarFill").style.width = `${pct}%`;
+  const countdown = document.getElementById("cacheCountdown");
+  const fill = document.getElementById("cacheBarFill");
+
+  if (countdown) countdown.textContent = `${minutes}:${seconds}`;
+  if (fill) fill.style.width = `${pct}%`;
 }
 
 function startCacheTimer() {
@@ -327,29 +222,29 @@ function buildBriefing() {
     <p><strong>Status overview:</strong> ${cancelled.length} cancelled, ${inAir.length} in air, ${arrived.length} arrived, ${departed.length} departed, ${delayed.length} delayed.</p>
     <p><strong>Most delayed flights:</strong></p>
     <ul>${topDelays || "<li>No material delays in current filtered view.</li>"}</ul>
-    <p><strong>Time basis:</strong> ${getTimeZoneInfo().label} display, Pakistan day filtering.</p>
+    <p><strong>Time basis:</strong> ${getTimeZoneInfo().label} display.</p>
   `;
 }
 
 function openBriefing() {
   const modal = document.getElementById("briefingModal");
   const body = document.getElementById("briefingBody");
+  if (!modal || !body) return;
   body.innerHTML = buildBriefing();
   modal.classList.remove("hidden");
 }
 
 function closeBriefing() {
-  document.getElementById("briefingModal").classList.add("hidden");
+  const modal = document.getElementById("briefingModal");
+  if (modal) modal.classList.add("hidden");
 }
 
 async function load() {
-  const airportParam = state.airport === "All" ? "ALL" : state.airport;
-  const res = await fetch(
-    `/api/flights?day=all&airport=${encodeURIComponent(airportParam)}&includeMinor=${state.includeMinor}`,
-    { cache: "no-store" }
-  );
+  const url = `/api/flights?day=${encodeURIComponent(state.day)}&airport=${encodeURIComponent(state.airport)}&includeMinor=${state.includeMinor}`;
 
+  const res = await fetch(url, { cache: "no-store" });
   const data = await res.json();
+
   state.raw = data;
   state.cacheSeconds = Number(data.cacheSeconds || 60);
 
@@ -368,6 +263,8 @@ async function load() {
     document.getElementById("airportFilter").value = "ALL";
   }
 
+  document.getElementById("minorCarrierToggle").checked = state.includeMinor;
+
   const updated = data.generatedAt
     ? new Intl.DateTimeFormat("en-GB", {
         timeZone: "Asia/Karachi",
@@ -377,10 +274,65 @@ async function load() {
       }).format(new Date(data.generatedAt))
     : "—";
 
-  document.getElementById("cacheInfo").textContent = `Cache updated ${updated} PKT`;
+  const cacheInfo = document.getElementById("cacheInfo");
+  if (cacheInfo) cacheInfo.textContent = `Cache updated ${updated} PKT`;
 
   refreshView();
   startCacheTimer();
+}
+
+function resetFilters() {
+  state.day = "today";
+  state.direction = "Both";
+  state.airport = "ALL";
+  state.airline = "All";
+  state.status = "All";
+  state.includeMinor = true;
+
+  document.querySelectorAll(".seg").forEach((x) => {
+    x.classList.toggle("active", x.dataset.day === "today");
+  });
+
+  document.getElementById("directionFilter").value = "Both";
+  document.getElementById("airportFilter").value = "ALL";
+  document.getElementById("airlineFilter").value = "All";
+  document.getElementById("statusFilter").value = "All";
+  document.getElementById("minorCarrierToggle").checked = true;
+
+  load();
+}
+
+function exportRows() {
+  if (!state.raw) return;
+
+  const rows = applyFilters(state.raw.flights || []);
+  const headers = ["Flight", "Airline", "Origin", "Destination", "Departure", "Arrival", "Status", "Delay", "Aircraft", "Type", "Diverted"];
+
+  const lines = rows.map((row) => [
+    row.number || "",
+    row.airline || "",
+    row.origin || "",
+    row.destination || "",
+    displayTime(bestDepTime(row)),
+    displayTime(bestArrTime(row)),
+    row.status || "",
+    delayText(row),
+    row.aircraft || "",
+    row.type || "",
+    row.diverted ? "Yes" : ""
+  ]);
+
+  const csv = [headers, ...lines]
+    .map((line) => line.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))
+    .join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "pakistan-flight-board.csv";
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 document.addEventListener("click", (e) => {
@@ -388,7 +340,7 @@ document.addEventListener("click", (e) => {
     document.querySelectorAll(".seg").forEach((x) => x.classList.remove("active"));
     e.target.classList.add("active");
     state.day = e.target.dataset.day;
-    refreshView();
+    load();
   }
 
   if (e.target.classList.contains("timeBtn")) {
@@ -424,13 +376,26 @@ document.getElementById("minorCarrierToggle").addEventListener("change", (e) => 
   load();
 });
 
-document.getElementById("resetFilters").addEventListener("click", resetFilters);
-document.getElementById("exportBtn").addEventListener("click", exportRows);
-document.getElementById("briefingBtn").addEventListener("click", openBriefing);
-document.getElementById("closeBriefingBtn").addEventListener("click", closeBriefing);
-document.getElementById("printBriefingBtn").addEventListener("click", () => window.print());
-document.getElementById("briefingModal").addEventListener("click", (e) => {
-  if (e.target.id === "briefingModal") closeBriefing();
-});
+const resetBtn = document.getElementById("resetFilters");
+if (resetBtn) resetBtn.addEventListener("click", resetFilters);
+
+const exportBtn = document.getElementById("exportBtn");
+if (exportBtn) exportBtn.addEventListener("click", exportRows);
+
+const briefingBtn = document.getElementById("briefingBtn");
+if (briefingBtn) briefingBtn.addEventListener("click", openBriefing);
+
+const closeBriefingBtn = document.getElementById("closeBriefingBtn");
+if (closeBriefingBtn) closeBriefingBtn.addEventListener("click", closeBriefing);
+
+const printBriefingBtn = document.getElementById("printBriefingBtn");
+if (printBriefingBtn) printBriefingBtn.addEventListener("click", () => window.print());
+
+const briefingModal = document.getElementById("briefingModal");
+if (briefingModal) {
+  briefingModal.addEventListener("click", (e) => {
+    if (e.target.id === "briefingModal") closeBriefing();
+  });
+}
 
 load();

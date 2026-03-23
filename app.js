@@ -1,10 +1,10 @@
-const DEFAULT_CACHE_SECONDS = 300;
+const DEFAULT_CACHE_SECONDS = 1200;
 
 let state = {
   raw: null,
   day: "today",
   direction: "Both",
-  airport: "ALL",
+  airport: "ISB",
   airline: "All",
   status: "All",
   includeMinor: false,
@@ -12,7 +12,9 @@ let state = {
   cacheSeconds: DEFAULT_CACHE_SECONDS,
   cacheRemaining: DEFAULT_CACHE_SECONDS,
   refreshPaused: false,
-  activeTab: "flights"
+  activeTab: "flights",
+  lastLoadedAt: null,
+  lastLoadFailed: false
 };
 
 const AIRLINE_STATUS_LINKS = [
@@ -204,7 +206,22 @@ function fillSelect(id, items, includeAll = true) {
   }
 }
 
-function todayTomorrowFilter(rows) {
+function baseClientFilteredRows() {
+  if (!state.raw) return [];
+  let rows = safeArray(state.raw.flights || []);
+
+  if (!state.includeMinor) {
+    rows = rows.filter((r) => r.isMajor);
+  }
+
+  if (state.airport !== "ALL" && state.airport !== "All") {
+    rows = rows.filter((r) => r.airportCode === state.airport);
+  }
+
+  return rows;
+}
+
+function dayFilteredRows(rows) {
   if (state.day === "all") return rows;
 
   const now = new Date();
@@ -246,14 +263,10 @@ function todayTomorrowFilter(rows) {
 function applyFilters(rows) {
   let out = [...rows];
 
-  out = todayTomorrowFilter(out);
+  out = dayFilteredRows(out);
 
   if (state.direction !== "Both") {
     out = out.filter((r) => r.direction === state.direction);
-  }
-
-  if (state.airport !== "ALL" && state.airport !== "All") {
-    out = out.filter((r) => r.airportCode === state.airport);
   }
 
   if (state.airline !== "All") {
@@ -505,29 +518,67 @@ function renderDisruptionFeed(rows) {
   }).join("");
 }
 
+function renderStaleStatus() {
+  const pill = document.getElementById("staleStatus");
+  if (!pill) return;
+
+  pill.className = "stalePill";
+
+  if (state.refreshPaused) {
+    pill.textContent = "Paused";
+    pill.classList.add("stalePaused");
+    return;
+  }
+
+  if (!state.lastLoadedAt) {
+    pill.textContent = "Loading";
+    pill.classList.add("staleWarn");
+    return;
+  }
+
+  const ageSeconds = Math.floor((Date.now() - state.lastLoadedAt) / 1000);
+  const staleThreshold = (state.cacheSeconds || DEFAULT_CACHE_SECONDS) * 2;
+
+  if (state.lastLoadFailed || ageSeconds > staleThreshold) {
+    pill.textContent = "Stale";
+    pill.classList.add("staleWarn");
+    return;
+  }
+
+  pill.textContent = "Fresh";
+  pill.classList.add("staleFresh");
+}
+
 function buildInstructions() {
   return `
     <p><strong>Current board features</strong></p>
     <ul>
       <li>Pakistan board covers Islamabad, Lahore and Karachi.</li>
-      <li>Refresh now and pause controls sit next to the cache timer.</li>
+      <li>Default view is Islamabad. Use the airport filter to expand to Lahore, Karachi, or All airports.</li>
+      <li>Manual refresh has been removed to reduce API cost.</li>
+      <li>The board refreshes every 20 minutes unless paused.</li>
+      <li>The status pill shows Fresh, Stale, or Paused.</li>
       <li>The cancelled KPI shows count and percentage and highlights when cancellations are present.</li>
       <li>The disruption feed surfaces the most severe currently filtered rows first.</li>
       <li>The airline tab shows total, on time, delayed and cancelled with coloured percentages and a simple performance bar.</li>
       <li>The airport tab shows total rows, cancelled rows, delayed over 60, and next movement for Pakistan airports and key hubs.</li>
       <li>The airline status modal links out to official airline pages for disruption cross checks.</li>
       <li>Times can be toggled between Pakistan time and UK time.</li>
-      <li>The board refreshes on a 5 minute cache cycle unless paused.</li>
-      <li>To reduce API cost, the cancelled tracker has been removed and the main fetch depth is capped at 3 pages per endpoint.</li>
     </ul>
 
-    <p><strong>How the disruption feed works</strong></p>
+    <p><strong>Cost saving design</strong></p>
     <ul>
-      <li>Cancelled rows rank highest.</li>
-      <li>Then diverted rows.</li>
-      <li>Then severe delays of 120 minutes or more.</li>
-      <li>Then delays of 60 minutes or more.</li>
-      <li>It only reflects the current filtered board.</li>
+      <li>The backend fetches one broader window for all three airports on each refresh cycle.</li>
+      <li>Day, airport, carrier set, direction, airline, and status now filter locally in the browser.</li>
+      <li>This means filter changes do not trigger new FlightAware calls.</li>
+      <li>Main fetch depth is capped at 3 pages per endpoint.</li>
+    </ul>
+
+    <p><strong>How the stale status works</strong></p>
+    <ul>
+      <li>Fresh means the last successful dataset is within the normal freshness window.</li>
+      <li>Stale means the board is showing older cached data than intended, or the last refresh failed.</li>
+      <li>Paused means automatic refresh is intentionally paused.</li>
     </ul>
 
     <p><strong>How the crisis readout works</strong></p>
@@ -540,7 +591,7 @@ function buildInstructions() {
 }
 
 function buildCrisisReadout() {
-  const rows = applyFilters((state.raw && state.raw.flights) || []);
+  const rows = applyFilters(baseClientFilteredRows());
   const cancelled = rows.filter((r) => r.status === "Cancelled");
   const delayed = rows.filter((r) => (r.delayMinutes || 0) >= 60 || r.status === "Delayed");
   const diverted = rows.filter((r) => r.status === "Diverted" || r.diverted);
@@ -613,11 +664,15 @@ function setActiveTab(tabName) {
 
 function refreshView() {
   if (!state.raw) return;
-  const rows = applyFilters(state.raw.flights || []);
+  const rows = applyFilters(baseClientFilteredRows());
   renderRows(rows);
   renderAirlines(rows);
   renderAirportCards(rows);
   renderDisruptionFeed(rows);
+
+  const baseRows = baseClientFilteredRows();
+  fillSelect("airlineFilter", [...new Set(baseRows.map((f) => f.airline).filter(Boolean))].sort());
+  renderStaleStatus();
 }
 
 function updateCacheUi() {
@@ -635,6 +690,8 @@ function updateCacheUi() {
   if (countdown) countdown.textContent = `${minutes}:${seconds}`;
   if (fill) fill.style.width = `${pct}%`;
   if (pauseBtn) pauseBtn.textContent = state.refreshPaused ? "▶" : "❚❚";
+
+  renderStaleStatus();
 }
 
 function startCacheTimer() {
@@ -663,56 +720,87 @@ function startCacheTimer() {
 }
 
 async function load(isBackground = false) {
-  const url = `/api/flights?day=${encodeURIComponent(state.day)}&airport=${encodeURIComponent(state.airport)}&includeMinor=${state.includeMinor}`;
-  const res = await fetch(url, { cache: "no-store" });
-  const data = await res.json();
+  try {
+    const res = await fetch("/api/flights", { cache: "no-store" });
+    const data = await res.json();
 
-  state.raw = data;
-  state.cacheSeconds = Number(data.cacheSeconds || DEFAULT_CACHE_SECONDS);
-  state.cacheRemaining = state.cacheSeconds;
+    if (!res.ok) {
+      throw new Error(data?.warnings?.[0] || "Failed to load board data.");
+    }
 
-  renderKpis(data.summary || {});
-  renderWarnings(data.warnings || []);
+    state.raw = data;
+    state.cacheSeconds = Number(data.cacheSeconds || DEFAULT_CACHE_SECONDS);
+    state.cacheRemaining = state.cacheSeconds;
+    state.lastLoadedAt = Date.now();
+    state.lastLoadFailed = false;
 
-  fillSelect("airportFilter", safeArray(data.filtersMeta?.airports || []), false);
-  fillSelect("airlineFilter", safeArray(data.filtersMeta?.airlines || []));
-  fillSelect("statusFilter", safeArray(data.filtersMeta?.statuses || []));
-  fillSelect("directionFilter", safeArray(data.filtersMeta?.directions || []), false);
+    const allAirports = ["ALL", ...safeArray(data.filtersMeta?.airports || []).filter((x) => x !== "ALL")];
+    fillSelect("airportFilter", allAirports, false);
+    fillSelect("statusFilter", safeArray(data.filtersMeta?.statuses || []));
+    fillSelect("directionFilter", safeArray(data.filtersMeta?.directions || []), false);
 
-  if (safeArray(data.filtersMeta?.airports || []).includes(state.airport)) {
+    if (!allAirports.includes(state.airport)) {
+      state.airport = "ISB";
+    }
+
     document.getElementById("airportFilter").value = state.airport;
-  } else {
-    state.airport = "ALL";
-    document.getElementById("airportFilter").value = "ALL";
-  }
+    document.getElementById("directionFilter").value = state.direction;
+    document.getElementById("statusFilter").value = state.status;
+    document.getElementById("minorCarrierToggle").checked = state.includeMinor;
 
-  document.getElementById("minorCarrierToggle").checked = state.includeMinor;
+    const updated = data.generatedAt
+      ? new Intl.DateTimeFormat("en-GB", {
+          timeZone: "Asia/Karachi",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false
+        }).format(new Date(data.generatedAt))
+      : "—";
 
-  const updated = data.generatedAt
-    ? new Intl.DateTimeFormat("en-GB", {
-        timeZone: "Asia/Karachi",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false
-      }).format(new Date(data.generatedAt))
-    : "—";
+    const cacheInfo = document.getElementById("cacheInfo");
+    if (cacheInfo) cacheInfo.textContent = `Cache updated ${updated} PKT`;
 
-  const cacheInfo = document.getElementById("cacheInfo");
-  if (cacheInfo) cacheInfo.textContent = `Cache updated ${updated} PKT`;
+    const summaryRows = applyFilters(baseClientFilteredRows());
+    const summary = {
+      totalFlights: summaryRows.length,
+      cancelled: summaryRows.filter((f) => f.status === "Cancelled").length,
+      diverted: summaryRows.filter((f) => f.diverted).length,
+      delayed60: summaryRows.filter((f) => (f.delayMinutes || 0) >= 60).length,
+      preDepDelays: summaryRows.filter((f) => f.direction === "Departure" && (f.delayMinutes || 0) > 0 && !f.actualDep).length,
+      avgDelayMinutes: (() => {
+        const delayed = summaryRows.filter((f) => (f.delayMinutes || 0) > 0);
+        return delayed.length
+          ? Math.round(delayed.reduce((sum, f) => sum + (f.delayMinutes || 0), 0) / delayed.length)
+          : 0;
+      })()
+    };
 
-  refreshView();
+    renderKpis(summary);
+    renderWarnings([
+      `Broader dataset cached for all three Pakistan airports. Filters now run locally in the browser.`,
+      state.includeMinor
+        ? `Major and smaller carriers are visible in the current view.`
+        : `Major carriers only in the current view.`
+    ]);
 
-  if (!isBackground) {
-    startCacheTimer();
-  } else {
-    updateCacheUi();
+    refreshView();
+
+    if (!isBackground) {
+      startCacheTimer();
+    } else {
+      updateCacheUi();
+    }
+  } catch (error) {
+    state.lastLoadFailed = true;
+    renderWarnings([error.message || "Failed to load board data."]);
+    renderStaleStatus();
   }
 }
 
 function exportRows() {
   if (!state.raw) return;
 
-  const rows = applyFilters(state.raw.flights || []);
+  const rows = applyFilters(baseClientFilteredRows());
   const headers = ["Flight", "Airline", "Origin", "Destination", "Departure", "Arrival", "Status", "Delay", "Aircraft", "Type", "Diverted"];
 
   const lines = rows.map((row) => [
@@ -786,7 +874,7 @@ document.addEventListener("click", (e) => {
     document.querySelectorAll(".seg").forEach((x) => x.classList.remove("active"));
     e.target.classList.add("active");
     state.day = e.target.dataset.day;
-    load(true);
+    refreshView();
   }
 
   if (e.target.classList.contains("timeBtn")) {
@@ -808,7 +896,7 @@ document.getElementById("directionFilter").addEventListener("change", (e) => {
 
 document.getElementById("airportFilter").addEventListener("change", (e) => {
   state.airport = e.target.value;
-  load(true);
+  refreshView();
 });
 
 document.getElementById("airlineFilter").addEventListener("change", (e) => {
@@ -823,11 +911,7 @@ document.getElementById("statusFilter").addEventListener("change", (e) => {
 
 document.getElementById("minorCarrierToggle").addEventListener("change", (e) => {
   state.includeMinor = e.target.checked;
-  load(true);
-});
-
-document.getElementById("refreshNowBtn").addEventListener("click", () => {
-  load(true);
+  refreshView();
 });
 
 document.getElementById("pauseRefreshBtn").addEventListener("click", () => {
@@ -840,7 +924,7 @@ document.getElementById("exportBtn").addEventListener("click", exportRows);
 document.getElementById("resetFilters").addEventListener("click", () => {
   state.day = "today";
   state.direction = "Both";
-  state.airport = "ALL";
+  state.airport = "ISB";
   state.airline = "All";
   state.status = "All";
   state.includeMinor = false;
@@ -850,12 +934,12 @@ document.getElementById("resetFilters").addEventListener("click", () => {
   });
 
   document.getElementById("directionFilter").value = "Both";
-  document.getElementById("airportFilter").value = "ALL";
+  document.getElementById("airportFilter").value = "ISB";
   document.getElementById("airlineFilter").value = "All";
   document.getElementById("statusFilter").value = "All";
   document.getElementById("minorCarrierToggle").checked = false;
 
-  load(true);
+  refreshView();
 });
 
 document.getElementById("instructionsBtn").addEventListener("click", openInstructions);

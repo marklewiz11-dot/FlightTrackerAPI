@@ -36,19 +36,35 @@ export default async function handler(req, res) {
     FDB: "flydubai"
   };
 
-  const MAJOR_AIRLINES = new Set([
-    "Pakistan International Airlines",
-    "Airblue",
-    "SereneAir",
-    "Fly Jinnah",
-    "Emirates",
-    "Qatar Airways",
-    "Etihad Airways",
-    "British Airways",
-    "Turkish Airlines",
-    "Saudia",
-    "Oman Air",
+  const MAJOR_AIRLINE_PATTERNS = [
+    "pakistan international",
+    "pia",
+    "airblue",
+    "serene",
+    "fly jinnah",
+    "emirates",
+    "qatar",
+    "etihad",
+    "british airways",
+    "turkish",
+    "saudia",
+    "oman air",
     "flydubai"
+  ];
+
+  const MAJOR_AIRLINE_CODES = new Set([
+    "PK", "PIA",
+    "PA", "ABQ",
+    "ER", "SEP",
+    "PF", "FJL",
+    "EK", "UAE",
+    "QR", "QTR",
+    "EY", "ETD",
+    "BA", "BAW",
+    "TK", "THY",
+    "SV", "SVA",
+    "WY", "OMA",
+    "FZ", "FDB"
   ]);
 
   function headers() {
@@ -81,11 +97,53 @@ export default async function handler(req, res) {
     return Math.round((e - s) / 60000);
   }
 
+  function normaliseAirlineName(name) {
+    return String(name || "")
+      .toLowerCase()
+      .replace(/\b(airlines?|airways|international|corp|corporation|limited|ltd|company|co)\b/g, " ")
+      .replace(/[^a-z0-9]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
   function fullAirlineName(f) {
     if (f.operator) return f.operator;
-    const iata = f.operator_iata || "";
-    const icao = f.operator_icao || "";
+
+    const iata = (f.operator_iata || "").toUpperCase();
+    const icao = (f.operator_icao || "").toUpperCase();
+
     return airlineMap[iata] || airlineMap[icao] || iata || icao || "—";
+  }
+
+  function isMajorAirline(flight, sourceFlight = null) {
+    const rawName = String(flight.airline || "");
+    const normalised = normaliseAirlineName(rawName);
+
+    if (MAJOR_AIRLINE_PATTERNS.some((p) => normalised.includes(p))) {
+      return true;
+    }
+
+    const numberPrefix = String(flight.number || "").replace(/[0-9].*$/, "").toUpperCase();
+    if (MAJOR_AIRLINE_CODES.has(numberPrefix)) {
+      return true;
+    }
+
+    const src = sourceFlight || {};
+    const opIata = String(src.operator_iata || "").toUpperCase();
+    const opIcao = String(src.operator_icao || "").toUpperCase();
+    const identIata = String(src.ident_iata || "").replace(/[0-9].*$/, "").toUpperCase();
+    const ident = String(src.ident || "").replace(/[0-9].*$/, "").toUpperCase();
+
+    if (
+      MAJOR_AIRLINE_CODES.has(opIata) ||
+      MAJOR_AIRLINE_CODES.has(opIcao) ||
+      MAJOR_AIRLINE_CODES.has(identIata) ||
+      MAJOR_AIRLINE_CODES.has(ident)
+    ) {
+      return true;
+    }
+
+    return false;
   }
 
   function getDepScheduled(f) {
@@ -183,7 +241,14 @@ export default async function handler(req, res) {
       delayMinutes: getDelayMinutes(f, "Arrival"),
       aircraft: f.aircraft_type || "—",
       type: f.type || "PAX",
-      diverted: Boolean(f.diverted)
+      diverted: Boolean(f.diverted),
+      isMajor: isMajorAirline(
+        {
+          airline: fullAirlineName(f),
+          number: flightNumber(f)
+        },
+        f
+      )
     };
   }
 
@@ -209,7 +274,14 @@ export default async function handler(req, res) {
       delayMinutes: getDelayMinutes(f, "Departure"),
       aircraft: f.aircraft_type || "—",
       type: f.type || "PAX",
-      diverted: Boolean(f.diverted)
+      diverted: Boolean(f.diverted),
+      isMajor: isMajorAirline(
+        {
+          airline: fullAirlineName(f),
+          number: flightNumber(f)
+        },
+        f
+      )
     };
   }
 
@@ -276,9 +348,9 @@ export default async function handler(req, res) {
   }
 
   try {
-    const requestedDay = String(req.query.day || "all").toLowerCase();
+    const requestedDay = String(req.query.day || "today").toLowerCase();
     const requestedAirport = String(req.query.airport || "ALL").toUpperCase();
-    const includeMinor = String(req.query.includeMinor || "true").toLowerCase() === "true";
+    const includeMinor = String(req.query.includeMinor || "false").toLowerCase() === "true";
 
     const { start, end } = getPakistanWindow(requestedDay);
 
@@ -341,11 +413,10 @@ export default async function handler(req, res) {
       allFlights.push(...arrivals, ...departures);
     }
 
-    let flights = dedupe(allFlights);
+    const dedupedFlights = dedupe(allFlights);
+    const majorFlights = dedupedFlights.filter((f) => f.isMajor);
 
-    if (!includeMinor) {
-      flights = flights.filter((f) => MAJOR_AIRLINES.has(f.airline));
-    }
+    let flights = includeMinor ? dedupedFlights : majorFlights;
 
     flights.sort((a, b) => {
       const aTime = toMillis(a.bestDep || a.bestArr || a.scheduledDep || a.scheduledArr) || 0;
@@ -385,8 +456,8 @@ export default async function handler(req, res) {
       flights,
       warnings: [
         includeMinor
-          ? "Pakistan major and smaller carriers shown."
-          : "Major carriers only.",
+          ? `Pakistan major and smaller carriers shown. ${dedupedFlights.length} total flights in board window.`
+          : `Major carriers only. ${majorFlights.length} flights matched major carrier rules.`,
         "FlightAware source. Pakistan day window."
       ]
     });

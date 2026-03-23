@@ -33,19 +33,37 @@ function statusClass(status) {
   const s = String(status || "").toLowerCase();
   if (s.includes("cancel")) return "status-bad";
   if (s.includes("delay")) return "status-warn";
-  if (s.includes("arrived") || s.includes("departed") || s.includes("on time") || s.includes("early")) return "status-good";
+  if (s.includes("arrived") || s.includes("departed") || s.includes("on time")) return "status-good";
   return "status-neutral";
 }
 
 function renderKpis(summary) {
   const el = document.getElementById("kpis");
   el.innerHTML = `
-    <div class="kpi"><div class="kpiLabel">Total Flights</div><div class="kpiValue">${summary.totalFlights || 0}</div></div>
-    <div class="kpi"><div class="kpiLabel">Cancelled</div><div class="kpiValue">${summary.cancelled || 0}</div></div>
-    <div class="kpi"><div class="kpiLabel">Diverted</div><div class="kpiValue">${summary.diverted || 0}</div></div>
-    <div class="kpi"><div class="kpiLabel">Delayed &gt;60m</div><div class="kpiValue">${summary.delayed60 || 0}</div></div>
-    <div class="kpi"><div class="kpiLabel">Pre-dep Delays</div><div class="kpiValue">${summary.preDepDelays || 0}</div></div>
-    <div class="kpi"><div class="kpiLabel">Avg Delay</div><div class="kpiValue">${summary.avgDelayMinutes || 0}m</div></div>
+    <div class="kpi">
+      <div class="kpiLabel">Total Flights</div>
+      <div class="kpiValue">${summary.totalFlights || 0}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpiLabel">Cancelled</div>
+      <div class="kpiValue">${summary.cancelled || 0}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpiLabel">Diverted</div>
+      <div class="kpiValue">${summary.diverted || 0}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpiLabel">Delayed >60m</div>
+      <div class="kpiValue">${summary.delayed60 || 0}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpiLabel">Pre dep delays</div>
+      <div class="kpiValue">${summary.preDepDelays || 0}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpiLabel">Avg Delay</div>
+      <div class="kpiValue">${summary.avgDelayMinutes || 0}m</div>
+    </div>
   `;
 }
 
@@ -62,13 +80,15 @@ function delayText(row) {
 }
 
 function displayStatus(row) {
-  if (row.status === "Delayed" && (row.estimatedDep || row.estimatedArr)) {
-    const t = row.direction === "Departure"
-      ? pakistanDateParts(row.estimatedDep).time
-      : pakistanDateParts(row.estimatedArr).time;
-    return `Delayed`;
-  }
   return row.status || "Unknown";
+}
+
+function bestDepTime(row) {
+  return row.actualDep || row.estimatedDep || row.scheduledDep || null;
+}
+
+function bestArrTime(row) {
+  return row.actualArr || row.estimatedArr || row.scheduledArr || null;
 }
 
 function displayTime(value) {
@@ -96,8 +116,12 @@ function todayTomorrowFilter(rows) {
   }).format(tomorrowDate);
 
   return rows.filter(row => {
-    const primary = row.direction === "Departure" ? row.scheduledDep : row.scheduledArr;
+    const primary = row.direction === "Departure"
+      ? (row.scheduledDep || row.estimatedDep || row.actualDep)
+      : (row.scheduledArr || row.estimatedArr || row.actualArr);
+
     if (!primary) return false;
+
     const date = pakistanDateParts(primary).date;
 
     if (state.day === "today") return date === today;
@@ -140,18 +164,21 @@ function renderRows(rows) {
   document.getElementById("flightCount").textContent = rows.length;
 
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="11">No flights match the current filters.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="11"><div class="emptyState">No flights match the current filters.</div></td></tr>`;
     return;
   }
 
   tbody.innerHTML = rows.map(row => `
     <tr>
-      <td class="flightCell">${row.number}</td>
+      <td>
+        <div class="flightCell">${row.number}</div>
+        <div class="flightSub">${row.direction}</div>
+      </td>
       <td>${row.airline || "—"}</td>
       <td>${row.origin || "—"}</td>
       <td>${row.destination || "—"}</td>
-      <td class="timeCell">${displayTime(row.scheduledDep)}</td>
-      <td class="timeCell">${displayTime(row.scheduledArr)}</td>
+      <td class="timeCell">${displayTime(bestDepTime(row))}</td>
+      <td class="timeCell">${displayTime(bestArrTime(row))}</td>
       <td>
         <span class="statusPill ${statusClass(row.status)}">
           <span class="statusDot"></span>${displayStatus(row)}
@@ -165,10 +192,77 @@ function renderRows(rows) {
   `).join("");
 }
 
+function refreshClock() {
+  const el = document.getElementById("clockInfo");
+  if (!el) return;
+
+  const now = new Date();
+  const time = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Karachi",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(now);
+
+  el.textContent = `PKT ${time}`;
+}
+
 function refreshView() {
   if (!state.raw) return;
   const rows = applyFilters(state.raw.flights || []);
   renderRows(rows);
+}
+
+function resetFilters() {
+  state.day = "today";
+  state.direction = "Both";
+  state.airport = "All";
+  state.airline = "All";
+  state.status = "All";
+
+  document.querySelectorAll(".seg").forEach(x => {
+    x.classList.toggle("active", x.dataset.day === "today");
+  });
+
+  document.getElementById("directionFilter").value = "Both";
+  document.getElementById("airportFilter").value = "All";
+  document.getElementById("airlineFilter").value = "All";
+  document.getElementById("statusFilter").value = "All";
+
+  refreshView();
+}
+
+function exportRows() {
+  if (!state.raw) return;
+
+  const rows = applyFilters(state.raw.flights || []);
+  const headers = ["Flight", "Airline", "Origin", "Destination", "Departure", "Arrival", "Status", "Delay", "Aircraft", "Type", "Diverted"];
+
+  const lines = rows.map(row => [
+    row.number || "",
+    row.airline || "",
+    row.origin || "",
+    row.destination || "",
+    displayTime(bestDepTime(row)),
+    displayTime(bestArrTime(row)),
+    row.status || "",
+    delayText(row),
+    row.aircraft || "",
+    row.type || "",
+    row.diverted ? "Yes" : ""
+  ]);
+
+  const csv = [headers, ...lines]
+    .map(line => line.map(v => `"${String(v).replace(/"/g, '""')}"`).join(","))
+    .join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "pakistan-flight-board.csv";
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 async function load() {
@@ -196,6 +290,7 @@ async function load() {
   document.getElementById("cacheInfo").textContent = `Cache: just now • ${updated} PKT`;
 
   refreshView();
+  refreshClock();
 }
 
 document.addEventListener("click", (e) => {
@@ -226,5 +321,10 @@ document.getElementById("statusFilter").addEventListener("change", (e) => {
   state.status = e.target.value;
   refreshView();
 });
+
+document.getElementById("resetFilters").addEventListener("click", resetFilters);
+document.getElementById("exportBtn").addEventListener("click", exportRows);
+
+setInterval(refreshClock, 1000 * 30);
 
 load();

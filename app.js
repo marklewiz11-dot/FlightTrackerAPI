@@ -55,7 +55,6 @@ const HUB_NAMES = {
   MCT: "Muscat",
   MED: "Madinah",
   KUL: "Kuala Lumpur",
-  JED: "Jeddah",
   LHR: "London Heathrow",
   LGW: "London Gatwick"
 };
@@ -98,15 +97,6 @@ function zonedDateParts(value) {
       hour12: false
     }).format(d)
   };
-}
-
-function pakistanDayKey(value) {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Karachi",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).format(new Date(value));
 }
 
 function pakistanDayLabel(dateKey) {
@@ -527,14 +517,34 @@ function renderDisruptionFeed(rows) {
 
 function buildInstructions() {
   return `
-    <p><strong>What this board now does</strong></p>
+    <p><strong>Current board features</strong></p>
     <ul>
+      <li>Pakistan board covers Islamabad, Lahore and Karachi.</li>
       <li>Refresh now and pause controls sit next to the cache timer.</li>
-      <li>The cancelled KPI shows both count and percentage and highlights when cancellations are present.</li>
+      <li>The cancelled KPI shows count and percentage and highlights when cancellations are present.</li>
       <li>The disruption feed surfaces the most severe currently filtered rows first.</li>
-      <li>The airline tab shows total, on time, delayed and cancelled with coloured percentages.</li>
+      <li>The airline tab shows total, on time, delayed and cancelled with coloured percentages and a simple performance bar.</li>
       <li>The airport tab shows total rows, cancelled rows, delayed over 60, and next movement for Pakistan airports and key hubs.</li>
       <li>The cancelled tracker uses a rolling seven day window from three days back to three days ahead.</li>
+      <li>The airline status modal links out to official airline pages for disruption cross checks.</li>
+      <li>Times can be toggled between Pakistan time and UK time.</li>
+      <li>The board refreshes on a 5 minute cache cycle unless paused.</li>
+    </ul>
+
+    <p><strong>How the disruption feed works</strong></p>
+    <ul>
+      <li>Cancelled rows rank highest.</li>
+      <li>Then diverted rows.</li>
+      <li>Then severe delays of 120 minutes or more.</li>
+      <li>Then delays of 60 minutes or more.</li>
+      <li>It only reflects the current filtered board.</li>
+    </ul>
+
+    <p><strong>How the crisis readout works</strong></p>
+    <ul>
+      <li>Summarises the filtered disruption picture.</li>
+      <li>Lists the most severe affected rows.</li>
+      <li>Shows the next available outbound options to key hubs such as Doha, Dubai, Abu Dhabi, Istanbul, Jeddah, Riyadh, Bahrain, Kuwait, Bangkok, Heathrow and Gatwick.</li>
     </ul>
 
     <p><strong>Cancelled tracker note</strong></p>
@@ -547,6 +557,7 @@ function buildCrisisReadout() {
   const cancelled = rows.filter((r) => r.status === "Cancelled");
   const delayed = rows.filter((r) => (r.delayMinutes || 0) >= 60 || r.status === "Delayed");
   const diverted = rows.filter((r) => r.status === "Diverted" || r.diverted);
+
   const severe = rows
     .filter((r) => disruptionPriority(r) > 0)
     .sort((a, b) => {
@@ -554,6 +565,13 @@ function buildCrisisReadout() {
       if (p !== 0) return p;
       return (b.delayMinutes || 0) - (a.delayMinutes || 0);
     })
+    .slice(0, 8);
+
+  const keyHubs = ["DOH", "DXB", "DWC", "AUH", "IST", "SAW", "JED", "RUH", "LHR", "LGW", "BKK", "KWI", "BAH"];
+  const nextOutboundHubs = rows
+    .filter((r) => r.direction === "Departure")
+    .filter((r) => keyHubs.includes(String(r.destination || "").toUpperCase()))
+    .sort((a, b) => toMillis(bestDepTime(a) || a.scheduledDep) - toMillis(bestDepTime(b) || b.scheduledDep))
     .slice(0, 8);
 
   return `
@@ -566,6 +584,15 @@ function buildCrisisReadout() {
         severe.length
           ? severe.map((r) => `<li>${r.number} ${r.airline} ${r.origin} → ${r.destination} ${disruptionLabel(r)}</li>`).join("")
           : "<li>No severe disruption rows in the current view.</li>"
+      }
+    </ul>
+
+    <p><strong>Next available outbound options to key hubs:</strong></p>
+    <ul>
+      ${
+        nextOutboundHubs.length
+          ? nextOutboundHubs.map((r) => `<li>${r.number} ${r.airline} ${r.origin} → ${r.destination} at ${displayTime(bestDepTime(r) || r.scheduledDep)} showing ${r.status}</li>`).join("")
+          : "<li>No key hub departures shown in the current filtered view.</li>"
       }
     </ul>
   `;
@@ -588,8 +615,8 @@ function buildAirlineStatus() {
 function buildCancelledTrackerHtml(data) {
   const scopeAirport = state.airport === "ALL" ? "All airports" : state.airport;
   const scopeCarriers = state.includeMinor ? "Major and smaller carriers" : "Major carriers only";
-  const days = safeArray(data.days || []);
-  const totalCancelled = Number(data.totalCancelled || 0);
+  const days = safeArray(data?.days || []);
+  const totalCancelled = Number(data?.totalCancelled || 0);
 
   if (!days.length || totalCancelled === 0) {
     return `
@@ -621,10 +648,10 @@ function buildCancelledTrackerHtml(data) {
           </div>
 
           ${
-            day.flights && day.flights.length
+            safeArray(day.flights).length
               ? `
                 <div class="trackerFlights">
-                  ${day.flights.map((flight) => `
+                  ${safeArray(day.flights).map((flight) => `
                     <div class="trackerFlightRow">
                       <div class="trackerFlightMain">
                         <span class="trackerFlightNumber">${flight.number || "—"}</span>
@@ -770,14 +797,15 @@ async function loadCancelledTracker() {
   try {
     const url = `/api/flights?tracker=cancelled&airport=${encodeURIComponent(state.airport)}&includeMinor=${state.includeMinor}`;
     const res = await fetch(url, { cache: "no-store" });
-    const data = await res.json();
+    const data = await res.json().catch(() => null);
 
     if (!res.ok) {
-      body.innerHTML = `<div class="trackerEmpty">Failed to load cancelled tracker.</div>`;
+      const msg = data?.warnings?.[0] || data?.error || "Failed to load cancelled tracker.";
+      body.innerHTML = `<div class="trackerEmpty">${msg}</div>`;
       return;
     }
 
-    body.innerHTML = buildCancelledTrackerHtml(data);
+    body.innerHTML = buildCancelledTrackerHtml(data || {});
   } catch (error) {
     body.innerHTML = `<div class="trackerEmpty">Failed to load cancelled tracker.</div>`;
   }

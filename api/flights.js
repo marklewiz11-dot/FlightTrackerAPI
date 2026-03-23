@@ -90,7 +90,7 @@ export default async function handler(req, res) {
   ]);
 
   function setCacheHeaders() {
-    res.setHeader("Cache-Control", "public, s-maxage=300, stale-while-revalidate=60");
+    res.setHeader("Cache-Control", "public, s-maxage=1200, stale-while-revalidate=120");
   }
 
   function sendJson(statusCode, payload) {
@@ -347,7 +347,7 @@ export default async function handler(req, res) {
     });
   }
 
-  function getPakistanWindow(dayMode = "all") {
+  function getBroadPakistanWindow() {
     const now = new Date();
 
     const localParts = new Intl.DateTimeFormat("en-CA", {
@@ -361,19 +361,8 @@ export default async function handler(req, res) {
     const m = localParts.find((p) => p.type === "month").value;
     const d = localParts.find((p) => p.type === "day").value;
 
-    const baseStart = new Date(`${y}-${m}-${d}T00:00:00+05:00`);
-
-    let startDate = new Date(baseStart);
-    let endDate = new Date(baseStart);
-
-    if (dayMode === "today") {
-      endDate = new Date(startDate.getTime() + 24 * 60 * 60 * 1000);
-    } else if (dayMode === "tomorrow") {
-      startDate = new Date(baseStart.getTime() + 24 * 60 * 60 * 1000);
-      endDate = new Date(startDate.getTime() + 24 * 60 * 60 * 1000);
-    } else {
-      endDate = new Date(startDate.getTime() + 2 * 24 * 60 * 60 * 1000);
-    }
+    const startDate = new Date(`${y}-${m}-${d}T00:00:00+05:00`);
+    const endDate = new Date(startDate.getTime() + 2 * 24 * 60 * 60 * 1000);
 
     return {
       start: startDate.toISOString().replace(".000Z", "Z"),
@@ -426,102 +415,37 @@ export default async function handler(req, res) {
   }
 
   try {
-    const requestedDay = String(req.query.day || "today").toLowerCase();
-    const requestedAirport = String(req.query.airport || "ALL").toUpperCase();
-    const includeMinor = String(req.query.includeMinor || "false").toLowerCase() === "true";
-
-    const airportIds =
-      requestedAirport === "ALL"
-        ? Object.keys(AIRPORTS)
-        : Object.keys(AIRPORTS).filter((id) => AIRPORTS[id].code === requestedAirport);
-
-    if (!airportIds.length) {
-      return sendJson(200, {
-        generatedAt: new Date().toISOString(),
-        cacheSeconds: 300,
-        filtersMeta: {
-          airports: ["ALL", ...Object.values(AIRPORTS).map((a) => a.code)],
-          airlines: [],
-          statuses: ["On Time", "Delayed", "Cancelled", "In Air", "Departed", "Arrived", "Diverted", "Scheduled"],
-          directions: ["Both", "Departure", "Arrival"]
-        },
-        summary: {
-          totalFlights: 0,
-          cancelled: 0,
-          diverted: 0,
-          delayed60: 0,
-          preDepDelays: 0,
-          avgDelayMinutes: 0
-        },
-        flights: [],
-        warnings: [`No matching airport for value ${requestedAirport}`]
-      });
-    }
-
-    const { start, end } = getPakistanWindow(requestedDay);
+    const { start, end } = getBroadPakistanWindow();
+    const airportIds = Object.keys(AIRPORTS);
     const dedupedFlights = await fetchWindowForAirports(airportIds, start, end, 3);
-    const majorFlights = dedupedFlights.filter((f) => f.isMajor);
-    const flights = includeMinor ? dedupedFlights : majorFlights;
 
-    flights.sort((a, b) => {
+    dedupedFlights.sort((a, b) => {
       const aTime = toMillis(a.bestDep || a.bestArr || a.scheduledDep || a.scheduledArr) || 0;
       const bTime = toMillis(b.bestDep || b.bestArr || b.scheduledDep || b.scheduledArr) || 0;
       return aTime - bTime;
     });
 
-    const cancelled = flights.filter((f) => f.status === "Cancelled").length;
-    const diverted = flights.filter((f) => f.diverted).length;
-    const delayed60 = flights.filter((f) => (f.delayMinutes || 0) >= 60).length;
-    const preDepDelays = flights.filter(
-      (f) => f.direction === "Departure" && (f.delayMinutes || 0) > 0 && !f.actualDep
-    ).length;
-
-    const avgDelay = flights.filter((f) => (f.delayMinutes || 0) > 0);
-    const avgDelayMinutes = avgDelay.length
-      ? Math.round(avgDelay.reduce((sum, f) => sum + (f.delayMinutes || 0), 0) / avgDelay.length)
-      : 0;
-
     return sendJson(200, {
       generatedAt: new Date().toISOString(),
-      cacheSeconds: 300,
+      cacheSeconds: 1200,
       filtersMeta: {
-        airports: ["ALL", ...Object.values(AIRPORTS).map((a) => a.code)],
-        airlines: [...new Set(flights.map((f) => f.airline).filter(Boolean))].sort(),
+        airports: Object.values(AIRPORTS).map((a) => a.code),
+        airlines: [...new Set(dedupedFlights.map((f) => f.airline).filter(Boolean))].sort(),
         statuses: ["On Time", "Delayed", "Cancelled", "In Air", "Departed", "Arrived", "Diverted", "Scheduled"],
         directions: ["Both", "Departure", "Arrival"]
       },
-      summary: {
-        totalFlights: flights.length,
-        cancelled,
-        diverted,
-        delayed60,
-        preDepDelays,
-        avgDelayMinutes
-      },
-      flights,
-      warnings: [
-        includeMinor
-          ? `Pakistan major and smaller carriers shown. ${dedupedFlights.length} total flights in board window.`
-          : `Major carriers only. ${majorFlights.length} flights matched major carrier rules.`
-      ]
+      flights: dedupedFlights,
+      warnings: []
     });
   } catch (error) {
     return sendJson(500, {
       generatedAt: new Date().toISOString(),
-      cacheSeconds: 300,
+      cacheSeconds: 1200,
       filtersMeta: {
         airports: [],
         airlines: [],
         statuses: [],
         directions: []
-      },
-      summary: {
-        totalFlights: 0,
-        cancelled: 0,
-        diverted: 0,
-        delayed60: 0,
-        preDepDelays: 0,
-        avgDelayMinutes: 0
       },
       flights: [],
       warnings: [error.message || "Failed to load FlightAware data."]

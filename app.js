@@ -7,8 +7,8 @@ let state = {
   status: "All",
   includeMinor: false,
   timezoneMode: "PKT",
-  cacheSeconds: 60,
-  cacheRemaining: 60
+  cacheSeconds: 300,
+  cacheRemaining: 300
 };
 
 const AIRLINE_STATUS_LINKS = [
@@ -184,7 +184,7 @@ function refreshView() {
 }
 
 function updateCacheUi() {
-  const total = Math.max(1, state.cacheSeconds || 60);
+  const total = Math.max(1, state.cacheSeconds || 300);
   const remaining = Math.max(0, state.cacheRemaining);
   const pct = (remaining / total) * 100;
 
@@ -199,7 +199,7 @@ function updateCacheUi() {
 }
 
 function startCacheTimer() {
-  state.cacheRemaining = state.cacheSeconds || 60;
+  state.cacheRemaining = state.cacheSeconds || 300;
   updateCacheUi();
 
   if (window.cacheTimer) clearInterval(window.cacheTimer);
@@ -229,6 +229,7 @@ function buildInstructions() {
       <li>Day options are Today, Tomorrow and All.</li>
       <li>Times can be shown in Pakistan time or UK time using the toggle at the top.</li>
       <li>The cache timer shows when the dashboard will refresh again.</li>
+      <li>The board now refreshes every 5 minutes by default.</li>
     </ul>
 
     <p><strong>How statuses are derived</strong></p>
@@ -377,7 +378,7 @@ async function load() {
   const data = await res.json();
 
   state.raw = data;
-  state.cacheSeconds = Number(data.cacheSeconds || 60);
+  state.cacheSeconds = Number(data.cacheSeconds || 300);
 
   renderKpis(data.summary || {});
   renderWarnings(data.warnings || []);

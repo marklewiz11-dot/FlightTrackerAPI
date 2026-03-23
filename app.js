@@ -226,6 +226,57 @@ function buildBriefing() {
   `;
 }
 
+function buildInstructions() {
+  return `
+    <p><strong>What this dashboard does</strong></p>
+    <p>This dashboard provides a browser based operational flight board for Pakistan using FlightAware airport board data for Islamabad, Lahore and Karachi. It is designed to support a quick situational picture rather than act as an official airport source.</p>
+
+    <p><strong>How the board is built</strong></p>
+    <ul>
+      <li>Data source is FlightAware AeroAPI.</li>
+      <li>The board queries scheduled arrivals and scheduled departures for the selected Pakistan airport window.</li>
+      <li>Times are displayed in either Pakistan time or UK time using the toggle at the top.</li>
+      <li>The cache timer shows when the dashboard will refresh again.</li>
+    </ul>
+
+    <p><strong>Status logic</strong></p>
+    <ul>
+      <li><strong>Cancelled</strong> is shown when the source indicates cancellation.</li>
+      <li><strong>Diverted</strong> is shown when the source indicates diversion.</li>
+      <li><strong>Arrived</strong> is shown when actual arrival exists.</li>
+      <li><strong>In Air</strong> is shown when actual departure exists but no actual arrival is present.</li>
+      <li><strong>Departed</strong> is used where departure evidence is clear.</li>
+      <li><strong>Delayed</strong> is shown when estimated or actual time is materially later than scheduled.</li>
+      <li><strong>On Time</strong> is shown when scheduled and estimated times align closely.</li>
+      <li><strong>Scheduled</strong> is used where there is not enough evidence for a stronger state.</li>
+    </ul>
+
+    <p><strong>Assumptions</strong></p>
+    <ul>
+      <li>The board prioritises stable, conservative status logic rather than guessing.</li>
+      <li>Departure and arrival cells show the best available operational time, using actual first, then estimated, then scheduled.</li>
+      <li>When <strong>Show smaller carriers</strong> is unticked, the board attempts to show major carriers only using airline name, operator code and flight prefix matching.</li>
+    </ul>
+
+    <p><strong>Limitations</strong></p>
+    <ul>
+      <li>This is not an official airport or PAA display.</li>
+      <li>FlightAware coverage and richness can vary by airport, route and carrier.</li>
+      <li>Some airline naming may vary between source records.</li>
+      <li>Some statuses may remain <strong>Scheduled</strong> where source evidence is incomplete.</li>
+      <li>The board is intended for operational awareness and briefing support, not as the sole basis for passenger or airline decisions.</li>
+    </ul>
+
+    <p><strong>How to use it</strong></p>
+    <ul>
+      <li>Select day, direction, airport, airline and status filters as needed.</li>
+      <li>Use the carrier toggle to widen the board to smaller carriers.</li>
+      <li>Use <strong>Briefing</strong> for a quick summary of the current filtered view.</li>
+      <li>Use <strong>Export</strong> to download the visible filtered board.</li>
+    </ul>
+  `;
+}
+
 function openBriefing() {
   const modal = document.getElementById("briefingModal");
   const body = document.getElementById("briefingBody");
@@ -236,6 +287,19 @@ function openBriefing() {
 
 function closeBriefing() {
   const modal = document.getElementById("briefingModal");
+  if (modal) modal.classList.add("hidden");
+}
+
+function openInstructions() {
+  const modal = document.getElementById("instructionsModal");
+  const body = document.getElementById("instructionsBody");
+  if (!modal || !body) return;
+  body.innerHTML = buildInstructions();
+  modal.classList.remove("hidden");
+}
+
+function closeInstructions() {
+  const modal = document.getElementById("instructionsModal");
   if (modal) modal.classList.add("hidden");
 }
 
@@ -391,10 +455,23 @@ if (closeBriefingBtn) closeBriefingBtn.addEventListener("click", closeBriefing);
 const printBriefingBtn = document.getElementById("printBriefingBtn");
 if (printBriefingBtn) printBriefingBtn.addEventListener("click", () => window.print());
 
+const instructionsBtn = document.getElementById("instructionsBtn");
+if (instructionsBtn) instructionsBtn.addEventListener("click", openInstructions);
+
+const closeInstructionsBtn = document.getElementById("closeInstructionsBtn");
+if (closeInstructionsBtn) closeInstructionsBtn.addEventListener("click", closeInstructions);
+
 const briefingModal = document.getElementById("briefingModal");
 if (briefingModal) {
   briefingModal.addEventListener("click", (e) => {
     if (e.target.id === "briefingModal") closeBriefing();
+  });
+}
+
+const instructionsModal = document.getElementById("instructionsModal");
+if (instructionsModal) {
+  instructionsModal.addEventListener("click", (e) => {
+    if (e.target.id === "instructionsModal") closeInstructions();
   });
 }
 

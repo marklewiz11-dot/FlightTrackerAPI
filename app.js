@@ -11,6 +11,21 @@ let state = {
   cacheRemaining: 60
 };
 
+const AIRLINE_STATUS_LINKS = [
+  { name: "Airblue", url: "https://www.airblue.com/flightinfo/status", note: "Official live flight status page" },
+  { name: "SereneAir", url: "https://www.sereneair.com/status", note: "Official flight status tool" },
+  { name: "Fly Jinnah", url: "https://www.flyjinnah.com/en/Manage/Flight-Status/Check-Flight-Status", note: "Official flight status page" },
+  { name: "PIA", url: "https://www.piac.com.pk/", note: "Official airline site with flight status function" },
+  { name: "Emirates", url: "https://www.emirates.com/english/help/flight-status/", note: "Official status page" },
+  { name: "Qatar Airways", url: "https://www.qatarairways.com/en/flight-status.html", note: "Official status page" },
+  { name: "Etihad Airways", url: "https://www.etihad.com/en/manage/flight-status", note: "Official status page" },
+  { name: "British Airways", url: "https://www.britishairways.com/travel/flightstatus/public/en_gb/search/FindFlightStatusPublic", note: "Official status page" },
+  { name: "Turkish Airlines", url: "https://www.turkishairlines.com/en-int/flights/flight-status/", note: "Official status page" },
+  { name: "Saudia", url: "https://www.saudia.com/pages/travel-information/flight-status", note: "Official status page" },
+  { name: "Oman Air", url: "https://www.omanair.com/gbl/en/flight-status", note: "Official status page" },
+  { name: "flydubai", url: "https://www.flydubai.com/en/plan/timetable-and-status", note: "Official status page" }
+];
+
 function getTimeZoneInfo() {
   if (state.timezoneMode === "UK") {
     return {
@@ -162,10 +177,94 @@ function renderRows(rows) {
   `).join("");
 }
 
+function scoreAirport(rows) {
+  const total = rows.length || 1;
+  const bad = rows.filter(r => r.status === "Cancelled" || r.status === "Diverted").length;
+  const delayed = rows.filter(r => r.status === "Delayed").length;
+  const ratio = (bad * 2 + delayed) / total;
+
+  if (ratio >= 0.45) return { label: "Severe", cls: "health-bad" };
+  if (ratio >= 0.2) return { label: "Degraded", cls: "health-warn" };
+  return { label: "Stable", cls: "health-good" };
+}
+
+function renderCrisisPanels(rows) {
+  const crisisStats = document.getElementById("crisisStats");
+  const hubOptions = document.getElementById("hubOptions");
+  const airportHealth = document.getElementById("airportHealth");
+
+  const delayed = rows.filter(r => r.status === "Delayed");
+  const cancelled = rows.filter(r => r.status === "Cancelled");
+  const diverted = rows.filter(r => r.status === "Diverted");
+  const inAir = rows.filter(r => r.status === "In Air");
+  const severe = rows.filter(r => (r.delayMinutes || 0) >= 120);
+
+  crisisStats.innerHTML = `
+    <div class="miniStat"><span class="miniStatLabel">Affected</span><span class="miniStatValue">${delayed.length + cancelled.length + diverted.length}</span></div>
+    <div class="miniStat"><span class="miniStatLabel">Cancelled</span><span class="miniStatValue">${cancelled.length}</span></div>
+    <div class="miniStat"><span class="miniStatLabel">Diverted</span><span class="miniStatValue">${diverted.length}</span></div>
+    <div class="miniStat"><span class="miniStatLabel">In Air</span><span class="miniStatValue">${inAir.length}</span></div>
+    <div class="miniStat"><span class="miniStatLabel">Delay >120m</span><span class="miniStatValue">${severe.length}</span></div>
+  `;
+
+  const hubKeywords = [
+    { name: "Doha", keys: ["DOH", "Doha"] },
+    { name: "Dubai", keys: ["DXB", "Dubai", "DWC"] },
+    { name: "Abu Dhabi", keys: ["AUH", "Abu Dhabi"] },
+    { name: "Istanbul", keys: ["IST", "Istanbul", "SAW"] },
+    { name: "Jeddah", keys: ["JED", "Jeddah"] },
+    { name: "Riyadh", keys: ["RUH", "Riyadh"] },
+    { name: "London", keys: ["LHR", "LGW", "London"] }
+  ];
+
+  const departures = rows
+    .filter(r => r.direction === "Departure")
+    .sort((a, b) => {
+      const at = new Date(bestDepTime(a) || 0).getTime();
+      const bt = new Date(bestDepTime(b) || 0).getTime();
+      return at - bt;
+    });
+
+  const hubCards = hubKeywords.map(hub => {
+    const match = departures.find(r =>
+      hub.keys.some(k => String(r.destination || "").toLowerCase().includes(k.toLowerCase()))
+    );
+
+    if (!match) {
+      return `<div class="hubRow"><span class="hubName">${hub.name}</span><span class="hubNone">No current departure shown</span></div>`;
+    }
+
+    return `
+      <div class="hubRow">
+        <span class="hubName">${hub.name}</span>
+        <span class="hubFlight">${match.number}</span>
+        <span class="hubTime">${displayTime(bestDepTime(match))}</span>
+        <span class="hubStatus ${statusClass(match.status)}">${match.status}</span>
+      </div>
+    `;
+  }).join("");
+
+  hubOptions.innerHTML = hubCards;
+
+  const airports = ["ISB", "LHE", "KHI"];
+  airportHealth.innerHTML = airports.map(code => {
+    const airportRows = rows.filter(r => r.airportCode === code);
+    const score = scoreAirport(airportRows);
+    return `
+      <div class="healthRow">
+        <span class="healthCode">${code}</span>
+        <span class="healthCount">${airportRows.length} flights</span>
+        <span class="healthBadge ${score.cls}">${score.label}</span>
+      </div>
+    `;
+  }).join("");
+}
+
 function refreshView() {
   if (!state.raw) return;
   const rows = applyFilters(state.raw.flights || []);
   renderRows(rows);
+  renderCrisisPanels(rows);
 }
 
 function updateCacheUi() {
@@ -245,35 +344,32 @@ function buildInstructions() {
       <li><strong>Diverted</strong> is shown when the source indicates diversion.</li>
       <li><strong>Arrived</strong> is shown when actual arrival exists.</li>
       <li><strong>In Air</strong> is shown when actual departure exists but no actual arrival is present.</li>
-      <li><strong>Departed</strong> is used where departure evidence is clear.</li>
       <li><strong>Delayed</strong> is shown when estimated or actual time is materially later than scheduled.</li>
       <li><strong>On Time</strong> is shown when scheduled and estimated times align closely.</li>
       <li><strong>Scheduled</strong> is used where there is not enough evidence for a stronger state.</li>
     </ul>
 
-    <p><strong>Assumptions</strong></p>
+    <p><strong>Assumptions and limitations</strong></p>
     <ul>
-      <li>The board prioritises stable, conservative status logic rather than guessing.</li>
-      <li>Departure and arrival cells show the best available operational time, using actual first, then estimated, then scheduled.</li>
-      <li>When <strong>Show smaller carriers</strong> is unticked, the board attempts to show major carriers only using airline name, operator code and flight prefix matching.</li>
+      <li>The board is conservative and avoids guessing where source evidence is weak.</li>
+      <li>It is intended for operational awareness and briefing support, not as the sole basis for passenger decisions.</li>
+      <li>The count shown is the board window count, not a complete all movement aviation picture.</li>
+      <li>Use Airline Status links for official operator level updates during major disruption.</li>
     </ul>
+  `;
+}
 
-    <p><strong>Limitations</strong></p>
-    <ul>
-      <li>This is not an official airport or PAA display.</li>
-      <li>FlightAware coverage and richness can vary by airport, route and carrier.</li>
-      <li>Some airline naming may vary between source records.</li>
-      <li>Some statuses may remain <strong>Scheduled</strong> where source evidence is incomplete.</li>
-      <li>The board is intended for operational awareness and briefing support, not as the sole basis for passenger or airline decisions.</li>
-    </ul>
-
-    <p><strong>How to use it</strong></p>
-    <ul>
-      <li>Select day, direction, airport, airline and status filters as needed.</li>
-      <li>Use the carrier toggle to widen the board to smaller carriers.</li>
-      <li>Use <strong>Briefing</strong> for a quick summary of the current filtered view.</li>
-      <li>Use <strong>Export</strong> to download the visible filtered board.</li>
-    </ul>
+function buildAirlineStatus() {
+  return `
+    <p><strong>Use these official airline pages alongside the board during disruption.</strong></p>
+    <div class="linkList">
+      ${AIRLINE_STATUS_LINKS.map(link => `
+        <a class="statusLinkCard" href="${link.url}" target="_blank" rel="noopener noreferrer">
+          <span class="statusLinkName">${link.name}</span>
+          <span class="statusLinkNote">${link.note}</span>
+        </a>
+      `).join("")}
+    </div>
   `;
 }
 
@@ -300,6 +396,19 @@ function openInstructions() {
 
 function closeInstructions() {
   const modal = document.getElementById("instructionsModal");
+  if (modal) modal.classList.add("hidden");
+}
+
+function openAirlineStatus() {
+  const modal = document.getElementById("airlineStatusModal");
+  const body = document.getElementById("airlineStatusBody");
+  if (!modal || !body) return;
+  body.innerHTML = buildAirlineStatus();
+  modal.classList.remove("hidden");
+}
+
+function closeAirlineStatus() {
+  const modal = document.getElementById("airlineStatusModal");
   if (modal) modal.classList.add("hidden");
 }
 
@@ -461,6 +570,12 @@ if (instructionsBtn) instructionsBtn.addEventListener("click", openInstructions)
 const closeInstructionsBtn = document.getElementById("closeInstructionsBtn");
 if (closeInstructionsBtn) closeInstructionsBtn.addEventListener("click", closeInstructions);
 
+const airlineStatusBtn = document.getElementById("airlineStatusBtn");
+if (airlineStatusBtn) airlineStatusBtn.addEventListener("click", openAirlineStatus);
+
+const closeAirlineStatusBtn = document.getElementById("closeAirlineStatusBtn");
+if (closeAirlineStatusBtn) closeAirlineStatusBtn.addEventListener("click", closeAirlineStatus);
+
 const briefingModal = document.getElementById("briefingModal");
 if (briefingModal) {
   briefingModal.addEventListener("click", (e) => {
@@ -472,6 +587,13 @@ const instructionsModal = document.getElementById("instructionsModal");
 if (instructionsModal) {
   instructionsModal.addEventListener("click", (e) => {
     if (e.target.id === "instructionsModal") closeInstructions();
+  });
+}
+
+const airlineStatusModal = document.getElementById("airlineStatusModal");
+if (airlineStatusModal) {
+  airlineStatusModal.addEventListener("click", (e) => {
+    if (e.target.id === "airlineStatusModal") closeAirlineStatus();
   });
 }
 

@@ -11,35 +11,52 @@ export default async function handler(req, res) {
   const airlineMap = {
     PIA: "Pakistan International Airlines",
     PK: "Pakistan International Airlines",
-    U4: "PMI Air",
+
     PA: "Airblue",
     ABQ: "Airblue",
+
     ER: "SereneAir",
     SEP: "SereneAir",
-    PF: "Fly Jinnah",
+
+    PF: "AirSial",
+    SIF: "AirSial",
+
+    "9P": "Fly Jinnah",
     FJL: "Fly Jinnah",
+
     EK: "Emirates",
     UAE: "Emirates",
+
     QR: "Qatar Airways",
     QTR: "Qatar Airways",
+
     EY: "Etihad Airways",
     ETD: "Etihad Airways",
+
     BA: "British Airways",
     BAW: "British Airways",
+
     TK: "Turkish Airlines",
     THY: "Turkish Airlines",
+
     SV: "Saudia",
     SVA: "Saudia",
+
     WY: "Oman Air",
     OMA: "Oman Air",
+
     FZ: "flydubai",
     FDB: "flydubai",
+
     TG: "Thai Airways",
     THA: "Thai Airways",
+
     G9: "Air Arabia",
     ABY: "Air Arabia",
+
     J9: "Jazeera Airways",
     JZR: "Jazeera Airways",
+
     CI: "China Airlines",
     CAL: "China Airlines"
   };
@@ -49,6 +66,8 @@ export default async function handler(req, res) {
     "pia",
     "airblue",
     "serene",
+    "airsial",
+    "air sial",
     "fly jinnah",
     "emirates",
     "qatar",
@@ -70,7 +89,8 @@ export default async function handler(req, res) {
     "PK", "PIA",
     "PA", "ABQ",
     "ER", "SEP",
-    "PF", "FJL",
+    "PF", "SIF",
+    "9P", "FJL",
     "EK", "UAE",
     "QR", "QTR",
     "EY", "ETD",
@@ -127,10 +147,22 @@ export default async function handler(req, res) {
   function fullAirlineName(f) {
     if (f.operator) return f.operator;
 
-    const iata = (f.operator_iata || "").toUpperCase();
-    const icao = (f.operator_icao || "").toUpperCase();
+    const iata = String(f.operator_iata || "").toUpperCase();
+    const icao = String(f.operator_icao || "").toUpperCase();
+    const identIataPrefix = String(f.ident_iata || "").replace(/[0-9].*$/, "").toUpperCase();
+    const identPrefix = String(f.ident || "").replace(/[0-9].*$/, "").toUpperCase();
 
-    return airlineMap[iata] || airlineMap[icao] || iata || icao || "—";
+    return (
+      airlineMap[iata] ||
+      airlineMap[icao] ||
+      airlineMap[identIataPrefix] ||
+      airlineMap[identPrefix] ||
+      iata ||
+      icao ||
+      identIataPrefix ||
+      identPrefix ||
+      "—"
+    );
   }
 
   function isMajorAirline(flight, sourceFlight = null) {
@@ -434,7 +466,7 @@ export default async function handler(req, res) {
     const dedupedFlights = dedupe(allFlights);
     const majorFlights = dedupedFlights.filter((f) => f.isMajor);
 
-    let flights = includeMinor ? dedupedFlights : majorFlights;
+    const flights = includeMinor ? dedupedFlights : majorFlights;
 
     flights.sort((a, b) => {
       const aTime = toMillis(a.bestDep || a.bestArr || a.scheduledDep || a.scheduledArr) || 0;

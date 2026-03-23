@@ -18,16 +18,22 @@
       </div>
 
       <div class="topbarRight">
-        <div class="cacheInfo" id="cacheInfo">Cache: just now</div>
+        <div class="topbarMeta" id="cacheInfo">Cache: just now</div>
+        <div class="topbarMeta" id="clockInfo">PKT 00:00</div>
+        <button class="topbarBtn" id="exportBtn">Export</button>
       </div>
     </header>
 
     <section class="kpis" id="kpis"></section>
 
     <section class="filtersCard">
-      <div class="filtersTitle">Filters</div>
+      <div class="sectionHead">
+        <div class="sectionTitle">Filters</div>
+        <button class="linkBtn" id="resetFilters">Reset filters</button>
+      </div>
+
       <div class="filtersGrid">
-        <div class="filterGroup">
+        <div class="filterGroup filterWide">
           <label>Day</label>
           <div class="segmented">
             <button class="seg active" data-day="today">Today</button>
@@ -64,7 +70,13 @@
 
     <section class="tableCard">
       <div class="tableToolbar">
-        <div class="tab active">Flights <span id="flightCount">0</span></div>
+        <div class="tableToolbarLeft">
+          <div class="tab active">Flights <span id="flightCount">0</span></div>
+        </div>
+
+        <div class="tableToolbarRight">
+          <div class="toolbarNote">Pakistan time</div>
+        </div>
       </div>
 
       <div id="warnings" class="warnings"></div>

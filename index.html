@@ -50,6 +50,14 @@
 
     <section class="kpis" id="kpis"></section>
 
+    <section class="paxControlCard">
+      <div class="paxControlRow">
+        <div class="paxControlLabel">Load factor: <strong id="loadFactorValue">85%</strong></div>
+        <input type="range" id="loadFactorSlider" min="50" max="100" step="1" value="85" />
+        <div class="paxControlHint">PAX estimate</div>
+      </div>
+    </section>
+
     <section class="feedCard">
       <div class="feedTitle">Disruption Feed</div>
       <div id="disruptionFeed"></div>
@@ -149,6 +157,7 @@
               <tr>
                 <th>Airline</th>
                 <th>Total</th>
+                <th>Est. PAX</th>
                 <th>On Time</th>
                 <th>Delayed</th>
                 <th>Cancelled</th>

@@ -25,14 +25,18 @@
         <div class="cacheWrap">
           <div class="cacheRow">
             <span id="cacheInfo">Cache updated</span>
-            <span id="cacheCountdown">5:00</span>
+            <span id="cacheCountdown">20:00</span>
           </div>
           <div class="cacheBar">
             <div class="cacheBarFill" id="cacheBarFill"></div>
           </div>
         </div>
 
-        <button class="iconBtn" id="refreshNowBtn" title="Refresh now">↻</button>
+        <div class="staleWrap">
+          <span class="staleLabel">Status</span>
+          <span class="stalePill staleFresh" id="staleStatus">Fresh</span>
+        </div>
+
         <button class="iconBtn" id="pauseRefreshBtn" title="Pause refresh">❚❚</button>
 
         <div class="timeToggle">

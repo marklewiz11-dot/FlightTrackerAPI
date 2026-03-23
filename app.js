@@ -13,17 +13,17 @@ let state = {
 
 const AIRLINE_STATUS_LINKS = [
   { name: "PIA", url: "https://www.piac.com.pk/", note: "Official airline site" },
-  { name: "Airblue", url: "https://www.airblue.com/flightinfo/status", note: "Official flight status page" },
-  { name: "SereneAir", url: "https://www.sereneair.com/status", note: "Official flight status page" },
-  { name: "Fly Jinnah", url: "https://www.flyjinnah.com/en/Manage/Flight-Status/Check-Flight-Status", note: "Official flight status page" },
-  { name: "Emirates", url: "https://www.emirates.com/english/help/flight-status/", note: "Official flight status page" },
-  { name: "Qatar Airways", url: "https://www.qatarairways.com/en/flight-status.html", note: "Official flight status page" },
-  { name: "Etihad Airways", url: "https://www.etihad.com/en/manage/flight-status", note: "Official flight status page" },
-  { name: "British Airways", url: "https://www.britishairways.com/travel/flightstatus/public/en_gb/search/FindFlightStatusPublic", note: "Official flight status page" },
-  { name: "Turkish Airlines", url: "https://www.turkishairlines.com/en-int/flights/flight-status/", note: "Official flight status page" },
-  { name: "Saudia", url: "https://www.saudia.com/pages/travel-information/flight-status", note: "Official flight status page" },
-  { name: "Oman Air", url: "https://www.omanair.com/gbl/en/flight-status", note: "Official flight status page" },
-  { name: "flydubai", url: "https://www.flydubai.com/en/plan/timetable-and-status", note: "Official flight status page" }
+  { name: "Airblue", url: "https://www.airblue.com/flightinfo/status", note: "Official flight status" },
+  { name: "SereneAir", url: "https://www.sereneair.com/status", note: "Official flight status" },
+  { name: "Fly Jinnah", url: "https://www.flyjinnah.com/en/Manage/Flight-Status/Check-Flight-Status", note: "Official flight status" },
+  { name: "Emirates", url: "https://www.emirates.com/english/help/flight-status/", note: "Official flight status" },
+  { name: "Qatar Airways", url: "https://www.qatarairways.com/en/flight-status.html", note: "Official flight status" },
+  { name: "Etihad Airways", url: "https://www.etihad.com/en/manage/flight-status", note: "Official flight status" },
+  { name: "British Airways", url: "https://www.britishairways.com/travel/flightstatus/public/en_gb/search/FindFlightStatusPublic", note: "Official flight status" },
+  { name: "Turkish Airlines", url: "https://www.turkishairlines.com/en-int/flights/flight-status/", note: "Official flight status" },
+  { name: "Saudia", url: "https://www.saudia.com/pages/travel-information/flight-status", note: "Official flight status" },
+  { name: "Oman Air", url: "https://www.omanair.com/gbl/en/flight-status", note: "Official flight status" },
+  { name: "flydubai", url: "https://www.flydubai.com/en/plan/timetable-and-status", note: "Official flight status" }
 ];
 
 function getTimeZoneInfo() {
@@ -218,58 +218,52 @@ function startCacheTimer() {
   }, 1000);
 }
 
-function buildBriefing() {
-  const rows = applyFilters((state.raw && state.raw.flights) || []);
-  const delayed = rows.filter((r) => r.status === "Delayed");
-  const cancelled = rows.filter((r) => r.status === "Cancelled");
-  const inAir = rows.filter((r) => r.status === "In Air");
-  const arrived = rows.filter((r) => r.status === "Arrived");
-  const departed = rows.filter((r) => r.status === "Departed");
-
-  const topDelays = delayed
-    .sort((a, b) => (b.delayMinutes || 0) - (a.delayMinutes || 0))
-    .slice(0, 5)
-    .map((r) => `<li>${r.number} ${r.airline} ${r.direction.toLowerCase()} delay ${r.delayMinutes || 0} minutes</li>`)
-    .join("");
-
-  return `
-    <p><strong>Board summary:</strong> ${rows.length} flights currently shown.</p>
-    <p><strong>Status overview:</strong> ${cancelled.length} cancelled, ${inAir.length} in air, ${arrived.length} arrived, ${departed.length} departed, ${delayed.length} delayed.</p>
-    <p><strong>Most delayed flights:</strong></p>
-    <ul>${topDelays || "<li>No material delays in current filtered view.</li>"}</ul>
-    <p><strong>Time basis:</strong> ${getTimeZoneInfo().label} display.</p>
-  `;
-}
-
 function buildInstructions() {
   return `
     <p><strong>What this dashboard does</strong></p>
-    <p>This dashboard provides a browser based operational flight board for Pakistan using the current flight API source and is designed to support a quick situational picture rather than act as an official airport display.</p>
+    <p>This dashboard provides a browser based operational flight board for Pakistan using the current flight API source. It is intended to support situational awareness during disruption rather than act as an official airport display.</p>
 
-    <p><strong>How it works</strong></p>
+    <p><strong>Current scope</strong></p>
     <ul>
-      <li>The board displays flights for the selected day window and airport scope.</li>
-      <li>Times are shown in either Pakistan time or UK time using the toggle at the top.</li>
+      <li>Airports covered are Islamabad, Lahore and Karachi.</li>
+      <li>Day options are Today, Tomorrow and All.</li>
+      <li>Times can be shown in Pakistan time or UK time using the toggle at the top.</li>
       <li>The cache timer shows when the dashboard will refresh again.</li>
-      <li>Departure and arrival cells show the best available operational time using actual first, then estimated, then scheduled.</li>
     </ul>
 
-    <p><strong>Status logic</strong></p>
+    <p><strong>How statuses are derived</strong></p>
     <ul>
       <li><strong>Cancelled</strong> when cancellation evidence is present.</li>
       <li><strong>Diverted</strong> when diversion evidence is present.</li>
       <li><strong>Arrived</strong> when actual arrival exists.</li>
       <li><strong>In Air</strong> when actual departure exists but actual arrival does not.</li>
+      <li><strong>Departed</strong> where departure evidence is clear.</li>
       <li><strong>Delayed</strong> when estimated or actual time is materially later than scheduled.</li>
       <li><strong>On Time</strong> when scheduled and estimated times align closely.</li>
       <li><strong>Scheduled</strong> where evidence is not strong enough for a firmer status.</li>
     </ul>
 
-    <p><strong>Assumptions and limitations</strong></p>
+    <p><strong>Assumptions</strong></p>
     <ul>
-      <li>The board is conservative and avoids guessing where evidence is weak.</li>
+      <li>Departure and arrival cells show the best available operational time using actual first, then estimated, then scheduled.</li>
       <li>Major carrier mode uses airline name, operator code and flight prefix matching.</li>
-      <li>This is for operational awareness and briefing support, not as the sole basis for passenger decisions.</li>
+      <li>The board is conservative and avoids guessing where evidence is weak.</li>
+    </ul>
+
+    <p><strong>Limitations</strong></p>
+    <ul>
+      <li>This is not an official airport or airline display.</li>
+      <li>Coverage and richness depend on the underlying source data.</li>
+      <li>The board count is the dashboard window count, not a complete all movement aviation picture.</li>
+      <li>Use the Airline Status links for operator level updates during major disruption.</li>
+    </ul>
+
+    <p><strong>How to use it</strong></p>
+    <ul>
+      <li>Use filters to narrow the board by day, direction, airport, airline and status.</li>
+      <li>Use Crisis for a disruption focused readout of the currently filtered board.</li>
+      <li>Use Airline Status to open official airline status pages.</li>
+      <li>Use Export to download the current filtered view.</li>
     </ul>
   `;
 }
@@ -284,7 +278,7 @@ function buildCrisisReadout() {
   const severeDelays = delayed
     .filter((r) => (r.delayMinutes || 0) >= 120)
     .sort((a, b) => (b.delayMinutes || 0) - (a.delayMinutes || 0))
-    .slice(0, 5);
+    .slice(0, 6);
 
   const keyHubs = ["DOH", "DXB", "DWC", "AUH", "IST", "SAW", "JED", "RUH", "LHR", "LGW"];
   const outboundHubs = rows
@@ -301,7 +295,9 @@ function buildCrisisReadout() {
     <ul>
       ${
         severeDelays.length
-          ? severeDelays.map((r) => `<li>${r.number} ${r.airline} ${r.direction.toLowerCase()} delayed ${r.delayMinutes || 0} minutes</li>`).join("")
+          ? severeDelays.map((r) => `
+              <li>${r.number} ${r.airline} departing from ${r.origin} to ${r.destination} delayed ${r.delayMinutes || 0} minutes</li>
+            `).join("")
           : "<li>No current severe delays in filtered view.</li>"
       }
     </ul>
@@ -310,7 +306,9 @@ function buildCrisisReadout() {
     <ul>
       ${
         outboundHubs.length
-          ? outboundHubs.map((r) => `<li>${r.number} to ${r.destination} at ${displayTime(bestDepTime(r))} showing ${r.status}</li>`).join("")
+          ? outboundHubs.map((r) => `
+              <li>${r.number} ${r.airline} departing from ${r.origin} to ${r.destination} at ${displayTime(bestDepTime(r))} showing ${r.status}</li>
+            `).join("")
           : "<li>No major hub departures currently shown in filtered view.</li>"
       }
     </ul>
@@ -322,28 +320,15 @@ function buildCrisisReadout() {
 function buildAirlineStatus() {
   return `
     <p><strong>Use these official airline pages alongside the board during disruption.</strong></p>
-    <div class="linkList">
+    <div class="linkListCompact">
       ${AIRLINE_STATUS_LINKS.map(link => `
-        <a class="statusLinkCard" href="${link.url}" target="_blank" rel="noopener noreferrer">
-          <span class="statusLinkName">${link.name}</span>
-          <span class="statusLinkNote">${link.note}</span>
+        <a class="statusLinkCardCompact" href="${link.url}" target="_blank" rel="noopener noreferrer">
+          <span class="statusLinkNameCompact">${link.name}</span>
+          <span class="statusLinkNoteCompact">${link.note}</span>
         </a>
       `).join("")}
     </div>
   `;
-}
-
-function openBriefing() {
-  const modal = document.getElementById("briefingModal");
-  const body = document.getElementById("briefingBody");
-  if (!modal || !body) return;
-  body.innerHTML = buildBriefing();
-  modal.classList.remove("hidden");
-}
-
-function closeBriefing() {
-  const modal = document.getElementById("briefingModal");
-  if (modal) modal.classList.add("hidden");
 }
 
 function openInstructions() {
@@ -528,15 +513,6 @@ if (resetBtn) resetBtn.addEventListener("click", resetFilters);
 const exportBtn = document.getElementById("exportBtn");
 if (exportBtn) exportBtn.addEventListener("click", exportRows);
 
-const briefingBtn = document.getElementById("briefingBtn");
-if (briefingBtn) briefingBtn.addEventListener("click", openBriefing);
-
-const closeBriefingBtn = document.getElementById("closeBriefingBtn");
-if (closeBriefingBtn) closeBriefingBtn.addEventListener("click", closeBriefing);
-
-const printBriefingBtn = document.getElementById("printBriefingBtn");
-if (printBriefingBtn) printBriefingBtn.addEventListener("click", () => window.print());
-
 const instructionsBtn = document.getElementById("instructionsBtn");
 if (instructionsBtn) instructionsBtn.addEventListener("click", openInstructions);
 
@@ -554,13 +530,6 @@ if (airlineStatusBtn) airlineStatusBtn.addEventListener("click", openAirlineStat
 
 const closeAirlineStatusBtn = document.getElementById("closeAirlineStatusBtn");
 if (closeAirlineStatusBtn) closeAirlineStatusBtn.addEventListener("click", closeAirlineStatus);
-
-const briefingModal = document.getElementById("briefingModal");
-if (briefingModal) {
-  briefingModal.addEventListener("click", (e) => {
-    if (e.target.id === "briefingModal") closeBriefing();
-  });
-}
 
 const instructionsModal = document.getElementById("instructionsModal");
 if (instructionsModal) {

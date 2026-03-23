@@ -15,7 +15,8 @@ const AIRLINE_STATUS_LINKS = [
   { name: "PIA", url: "https://www.piac.com.pk/", note: "Official airline site" },
   { name: "Airblue", url: "https://www.airblue.com/flightinfo/status", note: "Official flight status" },
   { name: "SereneAir", url: "https://www.sereneair.com/status", note: "Official flight status" },
-  { name: "Fly Jinnah", url: "https://www.flyjinnah.com/en/Manage/Flight-Status/Check-Flight-Status", note: "Official flight status" },
+  { name: "AirSial", url: "https://airsial.com/", note: "Official airline site" },
+  { name: "Fly Jinnah", url: "https://www.flyjinnah.com/", note: "Official site with flight status" },
   { name: "Emirates", url: "https://www.emirates.com/english/help/flight-status/", note: "Official flight status" },
   { name: "Qatar Airways", url: "https://www.qatarairways.com/en/flight-status.html", note: "Official flight status" },
   { name: "Etihad Airways", url: "https://www.etihad.com/en/manage/flight-status", note: "Official flight status" },
@@ -25,6 +26,9 @@ const AIRLINE_STATUS_LINKS = [
   { name: "Oman Air", url: "https://www.omanair.com/gbl/en/flight-status", note: "Official flight status" },
   { name: "flydubai", url: "https://www.flydubai.com/en/plan/timetable-and-status", note: "Official flight status" },
   { name: "Thai Airways", url: "https://www.thaiairways.com/en-hk/content/flight-status/", note: "Official flight status" },
+  { name: "Air Arabia", url: "https://flights.airarabia.com/en-pk/", note: "Official Pakistan site" },
+  { name: "Jazeera Airways", url: "https://www.jazeeraairways.com/en-pk", note: "Official Pakistan site with flight status" },
+  { name: "China Airlines", url: "https://www.china-airlines.com/", note: "Official airline site" },
   { name: "Air China", url: "https://www.airchina.com/", note: "Official site with flight status" },
   { name: "Kuwait Airways", url: "https://kuwaitairways.com/en/flightstatus", note: "Official flight status" },
   { name: "Gulf Air", url: "https://www.gulfair.com/flying-with-us/before-you-travel/flight-status", note: "Official flight status" },
@@ -286,7 +290,7 @@ function buildCrisisReadout() {
     .sort((a, b) => (b.delayMinutes || 0) - (a.delayMinutes || 0))
     .slice(0, 6);
 
-  const keyHubs = ["DOH", "DXB", "DWC", "AUH", "IST", "SAW", "JED", "RUH", "LHR", "LGW"];
+  const keyHubs = ["DOH", "DXB", "DWC", "AUH", "IST", "SAW", "JED", "RUH", "LHR", "LGW", "BKK", "KWI", "BAH"];
   const outboundHubs = rows
     .filter((r) => r.direction === "Departure")
     .filter((r) => keyHubs.some((hub) => String(r.destination || "").includes(hub)))

@@ -1,8 +1,12 @@
 export default async function handler(req, res) {
-  const apiKey = "hn1UO6XF9P3DrZPwMPi5ABgWXEV3wrvF";
-
+  const apiKey = "PASTE_YOUR_FLIGHTAWARE_KEY_HERE";
   const base = "https://aeroapi.flightaware.com/aeroapi";
-  const airport = { id: "OPIS", code: "ISB", name: "Islamabad" };
+
+  const AIRPORTS = {
+    OPIS: { code: "ISB", name: "Islamabad" },
+    OPLA: { code: "LHE", name: "Lahore" },
+    OPKC: { code: "KHI", name: "Karachi" }
+  };
 
   const airlineMap = {
     PIA: "Pakistan International Airlines",
@@ -32,6 +36,21 @@ export default async function handler(req, res) {
     FDB: "flydubai"
   };
 
+  const MAJOR_AIRLINES = new Set([
+    "Pakistan International Airlines",
+    "Airblue",
+    "SereneAir",
+    "Fly Jinnah",
+    "Emirates",
+    "Qatar Airways",
+    "Etihad Airways",
+    "British Airways",
+    "Turkish Airlines",
+    "Saudia",
+    "Oman Air",
+    "flydubai"
+  ]);
+
   function headers() {
     return {
       "x-apikey": apiKey,
@@ -60,9 +79,7 @@ export default async function handler(req, res) {
     const e = toMillis(estimateOrActual);
 
     if (s == null || e == null) return null;
-
-    const diffMinutes = Math.round((e - s) / 60000);
-    return diffMinutes;
+    return Math.round((e - s) / 60000);
   }
 
   function fullAirlineName(f) {
@@ -108,9 +125,10 @@ export default async function handler(req, res) {
 
   function getDelayMinutes(f, direction) {
     const scheduled = direction === "Arrival" ? getArrScheduled(f) : getDepScheduled(f);
-    const relevant = direction === "Arrival"
-      ? (getArrActual(f) || getArrEstimated(f))
-      : (getDepActual(f) || getDepEstimated(f));
+    const relevant =
+      direction === "Arrival"
+        ? (getArrActual(f) || getArrEstimated(f))
+        : (getDepActual(f) || getDepEstimated(f));
 
     const diff = compareTimes(scheduled, relevant);
     return diff && diff > 0 ? diff : 0;
@@ -146,9 +164,9 @@ export default async function handler(req, res) {
     return "Scheduled";
   }
 
-  function serialiseArrival(f) {
+  function serialiseArrival(f, airport) {
     return {
-      id: `${flightNumber(f)}|ARR|${getArrScheduled(f) || ""}`,
+      id: `${flightNumber(f)}|ARR|${airport.code}|${getArrScheduled(f) || ""}`,
       airportCode: airport.code,
       airportName: airport.name,
       direction: "Arrival",
@@ -172,9 +190,9 @@ export default async function handler(req, res) {
     };
   }
 
-  function serialiseDeparture(f) {
+  function serialiseDeparture(f, airport) {
     return {
-      id: `${flightNumber(f)}|DEP|${getDepScheduled(f) || ""}`,
+      id: `${flightNumber(f)}|DEP|${airport.code}|${getDepScheduled(f) || ""}`,
       airportCode: airport.code,
       airportName: airport.name,
       direction: "Departure",
@@ -200,10 +218,12 @@ export default async function handler(req, res) {
 
   function dedupe(list) {
     const seen = new Set();
+
     return list.filter((f) => {
       const key = [
         f.number,
         f.direction,
+        f.airportCode,
         f.scheduledDep || f.scheduledArr || "",
         f.origin,
         f.destination
@@ -260,32 +280,54 @@ export default async function handler(req, res) {
 
   try {
     const requestedDay = String(req.query.day || "all").toLowerCase();
+    const requestedAirport = String(req.query.airport || "ALL").toUpperCase();
+    const includeMinor = String(req.query.includeMinor || "false").toLowerCase() === "true";
+
     const { start, end } = getPakistanWindow(requestedDay);
 
-    const arrivalsUrl =
-      `${base}/airports/${airport.id}/flights/scheduled_arrivals?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=2`;
+    const airportIds =
+      requestedAirport === "ALL"
+        ? Object.keys(AIRPORTS)
+        : Object.keys(AIRPORTS).filter((id) => id === requestedAirport);
 
-    const departuresUrl =
-      `${base}/airports/${airport.id}/flights/scheduled_departures?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=2`;
+    const allFlights = [];
 
-    const [arrivalsRaw, departuresRaw] = await Promise.all([
-      getJson(arrivalsUrl),
-      getJson(departuresUrl)
-    ]);
+    for (const airportId of airportIds) {
+      const airport = AIRPORTS[airportId];
 
-    const arrivals = dedupe(
-      Array.isArray(arrivalsRaw.scheduled_arrivals)
-        ? arrivalsRaw.scheduled_arrivals.map(serialiseArrival)
-        : []
-    );
+      const arrivalsUrl =
+        `${base}/airports/${airportId}/flights/scheduled_arrivals?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=4`;
 
-    const departures = dedupe(
-      Array.isArray(departuresRaw.scheduled_departures)
-        ? departuresRaw.scheduled_departures.map(serialiseDeparture)
-        : []
-    );
+      const departuresUrl =
+        `${base}/airports/${airportId}/flights/scheduled_departures?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=4`;
 
-    const flights = [...departures, ...arrivals].sort((a, b) => {
+      const [arrivalsRaw, departuresRaw] = await Promise.all([
+        getJson(arrivalsUrl),
+        getJson(departuresUrl)
+      ]);
+
+      const arrivals = dedupe(
+        Array.isArray(arrivalsRaw.scheduled_arrivals)
+          ? arrivalsRaw.scheduled_arrivals.map((f) => serialiseArrival(f, airport))
+          : []
+      );
+
+      const departures = dedupe(
+        Array.isArray(departuresRaw.scheduled_departures)
+          ? departuresRaw.scheduled_departures.map((f) => serialiseDeparture(f, airport))
+          : []
+      );
+
+      allFlights.push(...arrivals, ...departures);
+    }
+
+    let flights = dedupe(allFlights);
+
+    if (!includeMinor) {
+      flights = flights.filter((f) => MAJOR_AIRLINES.has(f.airline));
+    }
+
+    flights.sort((a, b) => {
       const aTime = toMillis(a.bestDep || a.bestArr || a.scheduledDep || a.scheduledArr) || 0;
       const bTime = toMillis(b.bestDep || b.bestArr || b.scheduledDep || b.scheduledArr) || 0;
       return aTime - bTime;
@@ -297,6 +339,7 @@ export default async function handler(req, res) {
     const preDepDelays = flights.filter(
       (f) => f.direction === "Departure" && (f.delayMinutes || 0) > 0 && !f.actualDep
     ).length;
+
     const avgDelay = flights.filter((f) => (f.delayMinutes || 0) > 0);
     const avgDelayMinutes = avgDelay.length
       ? Math.round(avgDelay.reduce((sum, f) => sum + (f.delayMinutes || 0), 0) / avgDelay.length)
@@ -306,7 +349,7 @@ export default async function handler(req, res) {
       generatedAt: new Date().toISOString(),
       cacheSeconds: 60,
       filtersMeta: {
-        airports: [airport.code],
+        airports: ["ALL", ...Object.values(AIRPORTS).map((a) => a.code)],
         airlines: [...new Set(flights.map((f) => f.airline).filter(Boolean))].sort(),
         statuses: ["On Time", "Delayed", "Cancelled", "In Air", "Departed", "Arrived", "Diverted", "Scheduled"],
         directions: ["Both", "Departure", "Arrival"]
@@ -320,7 +363,12 @@ export default async function handler(req, res) {
         avgDelayMinutes
       },
       flights,
-      warnings: ["Islamabad only. FlightAware source. Window in Pakistan time."]
+      warnings: [
+        includeMinor
+          ? "Pakistan major and smaller carriers shown."
+          : "Major carriers only. Toggle on smaller carriers to widen the board.",
+        "FlightAware source. Pakistan day window."
+      ]
     });
   } catch (error) {
     return res.status(500).json({

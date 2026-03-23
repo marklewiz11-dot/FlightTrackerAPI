@@ -185,6 +185,12 @@ input {
   color: #e3b8be;
 }
 
+.topbarBtnDangerSoft {
+  border-color: rgba(255, 95, 109, 0.14);
+  background: rgba(255, 95, 109, 0.03);
+  color: #d9b4ba;
+}
+
 .topbarBtnSuccess {
   border-color: rgba(30, 203, 107, 0.18);
   background: rgba(30, 203, 107, 0.06);
@@ -193,6 +199,7 @@ input {
 
 .topbarBtnWarning:hover,
 .topbarBtnDanger:hover,
+.topbarBtnDangerSoft:hover,
 .topbarBtnSuccess:hover {
   background: rgba(255, 255, 255, 0.05);
 }
@@ -258,16 +265,16 @@ input {
 .linkBtn {
   background: transparent;
   border: 0;
-  color: var(--muted2);
+  color: #8eb8ff;
   cursor: pointer;
   padding: 0;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .filtersGrid {
   display: grid;
-  grid-template-columns: 1.15fr 0.85fr 0.9fr 1.1fr 0.85fr 1fr;
-  gap: 10px;
+  grid-template-columns: 1.5fr repeat(5, 1fr);
+  gap: 8px;
 }
 
 .filterGroup label {
@@ -275,9 +282,8 @@ input {
   color: var(--muted);
   font-size: 10px;
   text-transform: uppercase;
-  margin-bottom: 5px;
+  margin-bottom: 6px;
   letter-spacing: 0.10em;
-  line-height: 1;
 }
 
 .filterGroup select {
@@ -285,35 +291,13 @@ input {
   background: #121d33;
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 7px;
-  padding: 8px 10px;
-  outline: none;
-  height: 34px;
-  font-size: 12px;
+  border-radius: 8px;
+  padding: 9px 10px;
+  height: 36px;
 }
 
-.segmented {
-  display: flex;
-  background: #121d33;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  overflow: hidden;
-  height: 34px;
-}
-
-.seg {
-  flex: 1;
-  background: transparent;
-  border: 0;
-  color: var(--muted);
-  padding: 0 10px;
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.seg.active {
-  background: #16325d;
-  color: #dff0ff;
+.filterWide {
+  grid-column: span 1;
 }
 
 .checkboxBlock {
@@ -323,41 +307,50 @@ input {
 }
 
 .checkboxRow {
-  display: flex;
+  display: flex !important;
   align-items: center;
-  justify-content: center;
   gap: 8px;
-  min-height: 34px;
-  height: 34px;
+  min-height: 36px;
   padding: 0 10px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: 8px;
   background: #121d33;
-  color: var(--text);
+  color: var(--text) !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  margin-bottom: 0 !important;
+  font-size: 12px !important;
+}
+
+.segmented {
+  display: flex;
+  background: #121d33;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  height: 36px;
+}
+
+.seg {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
   font-size: 12px;
-  text-transform: none;
-  line-height: 1;
-  text-align: center;
 }
 
-.checkboxRow input {
-  margin: 0;
-  position: relative;
-  top: 0;
-}
-
-.checkboxRow span {
-  display: inline-flex;
-  align-items: center;
-  height: 100%;
+.seg.active {
+  background: #17325f;
+  color: #eaf4ff;
 }
 
 .tableToolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 12px;
-  border-bottom: 1px solid rgba(100, 130, 220, 0.10);
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(100, 130, 220, 0.12);
 }
 
 .tableToolbarLeft,
@@ -370,18 +363,20 @@ input {
 .tab {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   background: #172746;
   border: 1px solid var(--border);
-  border-radius: 7px;
-  padding: 6px 10px;
+  border-radius: 8px;
+  padding: 7px 11px;
   font-size: 12px;
   font-weight: 600;
 }
 
 .toolbarNote {
-  color: var(--muted2);
+  color: var(--muted);
   font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .warnings {
@@ -389,11 +384,11 @@ input {
 }
 
 .notice {
-  margin-top: 8px;
+  margin-top: 10px;
   border: 1px dashed rgba(255,255,255,0.12);
   border-radius: 8px;
   background: rgba(255,255,255,0.02);
-  padding: 8px 10px;
+  padding: 9px 10px;
   font-size: 12px;
   color: #d6e1f4;
 }
@@ -404,18 +399,15 @@ input {
 
 table {
   width: 100%;
-  min-width: 1180px;
   border-collapse: collapse;
 }
 
-th,
-td {
+th, td {
   text-align: left;
-  padding: 8px 12px;
-  border-bottom: 1px solid rgba(100, 130, 220, 0.07);
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(100, 130, 220, 0.08);
   font-size: 12px;
   white-space: nowrap;
-  line-height: 1.15;
 }
 
 thead th {
@@ -423,12 +415,7 @@ thead th {
   background: rgba(255,255,255,0.02);
   font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  padding-top: 10px;
-  padding-bottom: 10px;
+  letter-spacing: 0.08em;
 }
 
 tbody tr:hover {
@@ -437,41 +424,36 @@ tbody tr:hover {
 
 .flightCell {
   font-weight: 700;
-  font-size: 12px;
 }
 
 .timeCell {
   font-variant-numeric: tabular-nums;
-  font-size: 12px;
 }
 
 .delayCell {
   color: var(--amber);
-  font-size: 12px;
 }
 
 .statusPill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 8px;
+  gap: 7px;
+  padding: 4px 9px;
   border-radius: 999px;
   font-size: 11px;
   font-weight: 700;
   border: 1px solid transparent;
-  min-height: 20px;
-  line-height: 1;
 }
 
 .statusDot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 999px;
 }
 
 .status-good {
-  background: rgba(30,203,107,0.12);
-  color: #76f5aa;
+  background: rgba(30,203,107,0.10);
+  color: #89eab2;
   border-color: rgba(30,203,107,0.16);
 }
 
@@ -480,7 +462,7 @@ tbody tr:hover {
 }
 
 .status-warn {
-  background: rgba(255,176,32,0.12);
+  background: rgba(255,176,32,0.10);
   color: #ffd27a;
   border-color: rgba(255,176,32,0.16);
 }
@@ -490,7 +472,7 @@ tbody tr:hover {
 }
 
 .status-bad {
-  background: rgba(255,95,109,0.12);
+  background: rgba(255,95,109,0.10);
   color: #ffb0b8;
   border-color: rgba(255,95,109,0.16);
 }
@@ -510,33 +492,19 @@ tbody tr:hover {
 }
 
 .emptyState {
-  padding: 16px 12px;
+  padding: 18px 6px;
   color: var(--muted);
-  font-size: 12px;
-}
-
-td:nth-child(2) {
-  max-width: 170px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-td:nth-child(5),
-td:nth-child(6),
-th:nth-child(5),
-th:nth-child(6) {
-  min-width: 88px;
 }
 
 .modal {
   position: fixed;
   inset: 0;
-  background: rgba(2, 8, 18, 0.76);
+  background: rgba(3, 7, 15, 0.72);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 18px;
-  z-index: 50;
+  padding: 16px;
+  z-index: 1000;
 }
 
 .hidden {
@@ -544,30 +512,36 @@ th:nth-child(6) {
 }
 
 .modalCard {
-  width: min(860px, 100%);
+  width: min(900px, 100%);
   max-height: 88vh;
   overflow: auto;
   border: 1px solid var(--borderStrong);
   border-radius: 12px;
-  background: linear-gradient(180deg, rgba(10,20,38,0.98), rgba(8,16,29,0.98));
+  background: linear-gradient(180deg, rgba(9,18,35,0.99), rgba(7,14,26,0.99));
   box-shadow: var(--shadow);
-  padding: 16px;
 }
 
 .modalCardWide {
-  width: min(1040px, 100%);
+  width: min(1180px, 100%);
 }
 
 .modalHead {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(100, 130, 220, 0.12);
+  position: sticky;
+  top: 0;
+  background: linear-gradient(180deg, rgba(9,18,35,1), rgba(7,14,26,1));
 }
 
 .modalTitle {
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .closeBtn {
@@ -575,62 +549,160 @@ th:nth-child(6) {
   padding: 0 12px;
   border-radius: 8px;
   border: 1px solid var(--borderStrong);
-  background: linear-gradient(180deg, rgba(20, 37, 68, 0.98), rgba(13, 28, 54, 0.98));
+  background: rgba(255,255,255,0.03);
   color: var(--text);
   cursor: pointer;
-  font-size: 12px;
 }
 
 .briefingBody {
-  color: #dce8fc;
-  line-height: 1.5;
+  padding: 14px;
   font-size: 13px;
-}
-
-.briefingBody ul {
-  margin: 8px 0 14px 18px;
-  padding: 0;
+  color: #dce7fb;
+  line-height: 1.55;
 }
 
 .briefingBody p {
-  margin: 0 0 10px;
+  margin: 0 0 12px;
+}
+
+.briefingBody ul {
+  margin: 0 0 12px 18px;
+  padding: 0;
 }
 
 .linkListCompact {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .statusLinkCardCompact {
-  display: block;
-  padding: 10px 11px;
-  border: 1px solid rgba(30, 203, 107, 0.16);
-  border-radius: 9px;
-  background: rgba(30,203,107,0.04);
-  color: #dfffee;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   text-decoration: none;
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.02);
 }
 
 .statusLinkCardCompact:hover {
-  background: rgba(255,255,255,0.05);
+  background: rgba(255,255,255,0.04);
 }
 
 .statusLinkNameCompact {
-  display: block;
   font-weight: 700;
-  margin-bottom: 3px;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .statusLinkNoteCompact {
-  display: block;
-  color: #b7d9c5;
+  color: var(--muted);
   font-size: 11px;
-  line-height: 1.35;
 }
 
-@media (max-width: 1400px) {
+.trackerLoading,
+.trackerEmpty {
+  padding: 14px 2px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.trackerIntro {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.02);
+}
+
+.trackerIntroLine {
+  font-size: 12px;
+  color: #dce7fb;
+}
+
+.trackerGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.trackerDayCard {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.02);
+  overflow: hidden;
+}
+
+.trackerDayHead {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(100, 130, 220, 0.10);
+  background: rgba(255,255,255,0.02);
+}
+
+.trackerDayTitle {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.trackerDayKpis {
+  display: flex;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.trackerFlights {
+  padding: 6px 8px;
+}
+
+.trackerFlightRow {
+  padding: 8px 6px;
+  border-bottom: 1px solid rgba(100, 130, 220, 0.08);
+}
+
+.trackerFlightRow:last-child {
+  border-bottom: 0;
+}
+
+.trackerFlightMain {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-bottom: 3px;
+}
+
+.trackerFlightNumber {
+  font-weight: 700;
+  color: #ffb0b8;
+}
+
+.trackerFlightAirline {
+  color: #dce7fb;
+  font-size: 12px;
+}
+
+.trackerFlightRoute,
+.trackerFlightMeta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.trackerArrow {
+  opacity: 0.8;
+}
+
+@media (max-width: 1200px) {
   .kpis {
     grid-template-columns: repeat(3, 1fr);
   }
@@ -638,18 +710,24 @@ th:nth-child(6) {
   .filtersGrid {
     grid-template-columns: repeat(3, 1fr);
   }
+
+  .linkListCompact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .trackerGrid {
+    grid-template-columns: 1fr;
+  }
 }
 
-@media (max-width: 980px) {
+@media (max-width: 820px) {
   .topbar {
-    flex-direction: column;
     align-items: flex-start;
-    gap: 10px;
     padding: 12px;
   }
 
   .topbarRight {
-    width: 100%;
+    justify-content: flex-end;
   }
 
   .kpis {
@@ -657,21 +735,10 @@ th:nth-child(6) {
   }
 
   .filtersGrid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: 1fr;
   }
 
   .linkListCompact {
     grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 700px) {
-  .kpis,
-  .filtersGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .shell {
-    width: min(100vw - 14px, 1650px);
   }
 }

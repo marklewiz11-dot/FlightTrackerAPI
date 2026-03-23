@@ -77,17 +77,14 @@ export default async function handler(req, res) {
   function compareTimes(scheduled, estimateOrActual) {
     const s = toMillis(scheduled);
     const e = toMillis(estimateOrActual);
-
     if (s == null || e == null) return null;
     return Math.round((e - s) / 60000);
   }
 
   function fullAirlineName(f) {
     if (f.operator) return f.operator;
-
     const iata = f.operator_iata || "";
     const icao = f.operator_icao || "";
-
     return airlineMap[iata] || airlineMap[icao] || iata || icao || "—";
   }
 
@@ -281,14 +278,37 @@ export default async function handler(req, res) {
   try {
     const requestedDay = String(req.query.day || "all").toLowerCase();
     const requestedAirport = String(req.query.airport || "ALL").toUpperCase();
-    const includeMinor = String(req.query.includeMinor || "false").toLowerCase() === "true";
+    const includeMinor = String(req.query.includeMinor || "true").toLowerCase() === "true";
 
     const { start, end } = getPakistanWindow(requestedDay);
 
     const airportIds =
       requestedAirport === "ALL"
         ? Object.keys(AIRPORTS)
-        : Object.keys(AIRPORTS).filter((id) => id === requestedAirport);
+        : Object.keys(AIRPORTS).filter((id) => AIRPORTS[id].code === requestedAirport);
+
+    if (!airportIds.length) {
+      return res.status(200).json({
+        generatedAt: new Date().toISOString(),
+        cacheSeconds: 60,
+        filtersMeta: {
+          airports: ["ALL", ...Object.values(AIRPORTS).map((a) => a.code)],
+          airlines: [],
+          statuses: ["On Time", "Delayed", "Cancelled", "In Air", "Departed", "Arrived", "Diverted", "Scheduled"],
+          directions: ["Both", "Departure", "Arrival"]
+        },
+        summary: {
+          totalFlights: 0,
+          cancelled: 0,
+          diverted: 0,
+          delayed60: 0,
+          preDepDelays: 0,
+          avgDelayMinutes: 0
+        },
+        flights: [],
+        warnings: [`No matching airport for value ${requestedAirport}`]
+      });
+    }
 
     const allFlights = [];
 
@@ -366,7 +386,7 @@ export default async function handler(req, res) {
       warnings: [
         includeMinor
           ? "Pakistan major and smaller carriers shown."
-          : "Major carriers only. Toggle on smaller carriers to widen the board.",
+          : "Major carriers only.",
         "FlightAware source. Pakistan day window."
       ]
     });

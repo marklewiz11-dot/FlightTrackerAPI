@@ -18,8 +18,22 @@
       </div>
 
       <div class="topbarRight">
-        <div class="topbarMeta" id="cacheInfo">Cache: just now</div>
-        <div class="topbarMeta" id="clockInfo">PKT 00:00</div>
+        <div class="cacheWrap">
+          <div class="cacheRow">
+            <span id="cacheInfo">Cache: just now</span>
+            <span id="cacheCountdown">0:60</span>
+          </div>
+          <div class="cacheBar">
+            <div class="cacheBarFill" id="cacheBarFill"></div>
+          </div>
+        </div>
+
+        <div class="timeToggle">
+          <button class="timeBtn active" data-tz="PKT">PKT</button>
+          <button class="timeBtn" data-tz="UK">UK</button>
+        </div>
+
+        <button class="topbarBtn" id="briefingBtn">Briefing</button>
         <button class="topbarBtn" id="exportBtn">Export</button>
       </div>
     </header>
@@ -28,7 +42,7 @@
 
     <section class="filtersCard">
       <div class="sectionHead">
-        <div class="sectionTitle">Filters</div>
+        <div class="filtersTitle">Filters</div>
         <button class="linkBtn" id="resetFilters">Reset filters</button>
       </div>
 
@@ -73,9 +87,8 @@
         <div class="tableToolbarLeft">
           <div class="tab active">Flights <span id="flightCount">0</span></div>
         </div>
-
         <div class="tableToolbarRight">
-          <div class="toolbarNote">Pakistan time</div>
+          <div class="toolbarNote" id="timezoneNote">Pakistan time</div>
         </div>
       </div>
 
@@ -102,6 +115,19 @@
         </table>
       </div>
     </section>
+  </div>
+
+  <div class="modal hidden" id="briefingModal">
+    <div class="modalCard">
+      <div class="modalHead">
+        <div class="modalTitle">Flight Briefing Summary</div>
+        <button class="closeBtn" id="closeBriefingBtn">Close</button>
+      </div>
+      <div class="briefingBody" id="briefingBody"></div>
+      <div class="modalActions">
+        <button class="topbarBtn" id="printBriefingBtn">Print</button>
+      </div>
+    </div>
   </div>
 
   <script src="/app.js"></script>

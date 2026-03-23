@@ -4,25 +4,56 @@ let state = {
   direction: "Both",
   airport: "All",
   airline: "All",
-  status: "All"
+  status: "All",
+  timezoneMode: "PKT",
+  cacheSeconds: 60,
+  cacheRemaining: 60
 };
 
-function pakistanDateParts(value) {
+function getTimeZoneInfo() {
+  if (state.timezoneMode === "UK") {
+    return {
+      label: "UK time",
+      zone: "Europe/London",
+      suffix: "UK"
+    };
+  }
+
+  return {
+    label: "Pakistan time",
+    zone: "Asia/Karachi",
+    suffix: "PKT"
+  };
+}
+
+function zonedDateParts(value) {
   const d = new Date(value);
+  const tz = getTimeZoneInfo().zone;
+
   return {
     date: new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Asia/Karachi",
+      timeZone: tz,
       year: "numeric",
       month: "2-digit",
       day: "2-digit"
     }).format(d),
     time: new Intl.DateTimeFormat("en-GB", {
-      timeZone: "Asia/Karachi",
+      timeZone: tz,
       hour: "2-digit",
       minute: "2-digit",
       hour12: false
     }).format(d)
   };
+}
+
+function pakistanDateOnly(value) {
+  const d = new Date(value);
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Karachi",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(d);
 }
 
 function safeArray(v) {
@@ -57,7 +88,7 @@ function renderKpis(summary) {
       <div class="kpiValue">${summary.delayed60 || 0}</div>
     </div>
     <div class="kpi">
-      <div class="kpiLabel">Pre dep delays</div>
+      <div class="kpiLabel">Pre dep Delays</div>
       <div class="kpiValue">${summary.preDepDelays || 0}</div>
     </div>
     <div class="kpi">
@@ -71,7 +102,7 @@ function fillSelect(id, items, includeAll = true) {
   const el = document.getElementById(id);
   const current = el.value || "All";
   const values = includeAll ? ["All", ...items] : items;
-  el.innerHTML = values.map(v => `<option value="${v}">${v}</option>`).join("");
+  el.innerHTML = values.map((v) => `<option value="${v}">${v}</option>`).join("");
   if (values.includes(current)) el.value = current;
 }
 
@@ -84,46 +115,33 @@ function displayStatus(row) {
 }
 
 function bestDepTime(row) {
-  return row.actualDep || row.estimatedDep || row.scheduledDep || null;
+  return row.bestDep || row.actualDep || row.estimatedDep || row.scheduledDep || null;
 }
 
 function bestArrTime(row) {
-  return row.actualArr || row.estimatedArr || row.scheduledArr || null;
+  return row.bestArr || row.actualArr || row.estimatedArr || row.scheduledArr || null;
 }
 
 function displayTime(value) {
   if (!value) return "—";
-  return pakistanDateParts(value).time;
+  return zonedDateParts(value).time;
 }
 
-function todayTomorrowFilter(rows) {
+function dayFilter(rows) {
   if (state.day === "all") return rows;
 
   const now = new Date();
-  const today = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Karachi",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).format(now);
+  const today = pakistanDateOnly(now);
+  const tomorrow = pakistanDateOnly(new Date(now.getTime() + 24 * 60 * 60 * 1000));
 
-  const tomorrowDate = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  const tomorrow = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Karachi",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).format(tomorrowDate);
-
-  return rows.filter(row => {
+  return rows.filter((row) => {
     const primary = row.direction === "Departure"
-      ? (row.scheduledDep || row.estimatedDep || row.actualDep)
-      : (row.scheduledArr || row.estimatedArr || row.actualArr);
+      ? (row.scheduledDep || row.estimatedDep || row.actualDep || row.bestDep)
+      : (row.scheduledArr || row.estimatedArr || row.actualArr || row.bestArr);
 
     if (!primary) return false;
 
-    const date = pakistanDateParts(primary).date;
-
+    const date = pakistanDateOnly(primary);
     if (state.day === "today") return date === today;
     if (state.day === "tomorrow") return date === tomorrow;
     return true;
@@ -133,22 +151,22 @@ function todayTomorrowFilter(rows) {
 function applyFilters(rows) {
   let out = [...rows];
 
-  out = todayTomorrowFilter(out);
+  out = dayFilter(out);
 
   if (state.direction !== "Both") {
-    out = out.filter(r => r.direction === state.direction);
+    out = out.filter((r) => r.direction === state.direction);
   }
 
   if (state.airport !== "All") {
-    out = out.filter(r => r.airportCode === state.airport);
+    out = out.filter((r) => r.airportCode === state.airport);
   }
 
   if (state.airline !== "All") {
-    out = out.filter(r => r.airline === state.airline);
+    out = out.filter((r) => r.airline === state.airline);
   }
 
   if (state.status !== "All") {
-    out = out.filter(r => r.status === state.status);
+    out = out.filter((r) => r.status === state.status);
   }
 
   return out;
@@ -156,19 +174,20 @@ function applyFilters(rows) {
 
 function renderWarnings(warnings) {
   const el = document.getElementById("warnings");
-  el.innerHTML = safeArray(warnings).map(w => `<div class="notice">${w}</div>`).join("");
+  el.innerHTML = safeArray(warnings).map((w) => `<div class="notice">${w}</div>`).join("");
 }
 
 function renderRows(rows) {
   const tbody = document.getElementById("flightRows");
   document.getElementById("flightCount").textContent = rows.length;
+  document.getElementById("timezoneNote").textContent = getTimeZoneInfo().label;
 
   if (!rows.length) {
     tbody.innerHTML = `<tr><td colspan="11"><div class="emptyState">No flights match the current filters.</div></td></tr>`;
     return;
   }
 
-  tbody.innerHTML = rows.map(row => `
+  tbody.innerHTML = rows.map((row) => `
     <tr>
       <td>
         <div class="flightCell">${row.number}</div>
@@ -192,21 +211,6 @@ function renderRows(rows) {
   `).join("");
 }
 
-function refreshClock() {
-  const el = document.getElementById("clockInfo");
-  if (!el) return;
-
-  const now = new Date();
-  const time = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Karachi",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false
-  }).format(now);
-
-  el.textContent = `PKT ${time}`;
-}
-
 function refreshView() {
   if (!state.raw) return;
   const rows = applyFilters(state.raw.flights || []);
@@ -220,7 +224,7 @@ function resetFilters() {
   state.airline = "All";
   state.status = "All";
 
-  document.querySelectorAll(".seg").forEach(x => {
+  document.querySelectorAll(".seg").forEach((x) => {
     x.classList.toggle("active", x.dataset.day === "today");
   });
 
@@ -238,7 +242,7 @@ function exportRows() {
   const rows = applyFilters(state.raw.flights || []);
   const headers = ["Flight", "Airline", "Origin", "Destination", "Departure", "Arrival", "Status", "Delay", "Aircraft", "Type", "Diverted"];
 
-  const lines = rows.map(row => [
+  const lines = rows.map((row) => [
     row.number || "",
     row.airline || "",
     row.origin || "",
@@ -253,7 +257,7 @@ function exportRows() {
   ]);
 
   const csv = [headers, ...lines]
-    .map(line => line.map(v => `"${String(v).replace(/"/g, '""')}"`).join(","))
+    .map((line) => line.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))
     .join("\n");
 
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -265,10 +269,77 @@ function exportRows() {
   URL.revokeObjectURL(url);
 }
 
+function updateCacheUi() {
+  const total = Math.max(1, state.cacheSeconds || 60);
+  const remaining = Math.max(0, state.cacheRemaining);
+  const pct = (remaining / total) * 100;
+
+  const minutes = Math.floor(remaining / 60);
+  const seconds = String(remaining % 60).padStart(2, "0");
+
+  document.getElementById("cacheCountdown").textContent = `${minutes}:${seconds}`;
+  document.getElementById("cacheBarFill").style.width = `${pct}%`;
+}
+
+function startCacheTimer() {
+  state.cacheRemaining = state.cacheSeconds || 60;
+  updateCacheUi();
+
+  if (window.cacheTimer) clearInterval(window.cacheTimer);
+
+  window.cacheTimer = setInterval(() => {
+    state.cacheRemaining -= 1;
+
+    if (state.cacheRemaining <= 0) {
+      state.cacheRemaining = 0;
+      updateCacheUi();
+      load();
+      return;
+    }
+
+    updateCacheUi();
+  }, 1000);
+}
+
+function buildBriefing() {
+  const rows = applyFilters((state.raw && state.raw.flights) || []);
+  const delayed = rows.filter((r) => r.status === "Delayed");
+  const cancelled = rows.filter((r) => r.status === "Cancelled");
+  const inAir = rows.filter((r) => r.status === "In Air");
+  const arrived = rows.filter((r) => r.status === "Arrived");
+  const departed = rows.filter((r) => r.status === "Departed");
+
+  const topDelays = delayed
+    .sort((a, b) => (b.delayMinutes || 0) - (a.delayMinutes || 0))
+    .slice(0, 5)
+    .map((r) => `<li>${r.number} ${r.airline} ${r.direction.toLowerCase()} delay ${r.delayMinutes || 0} minutes</li>`)
+    .join("");
+
+  return `
+    <p><strong>Board summary:</strong> ${rows.length} flights currently shown.</p>
+    <p><strong>Status overview:</strong> ${cancelled.length} cancelled, ${inAir.length} in air, ${arrived.length} arrived, ${departed.length} departed, ${delayed.length} delayed.</p>
+    <p><strong>Most delayed flights:</strong></p>
+    <ul>${topDelays || "<li>No material delays in current filtered view.</li>"}</ul>
+    <p><strong>Time basis:</strong> ${getTimeZoneInfo().label} display, Pakistan day filtering.</p>
+  `;
+}
+
+function openBriefing() {
+  const modal = document.getElementById("briefingModal");
+  const body = document.getElementById("briefingBody");
+  body.innerHTML = buildBriefing();
+  modal.classList.remove("hidden");
+}
+
+function closeBriefing() {
+  document.getElementById("briefingModal").classList.add("hidden");
+}
+
 async function load() {
-  const res = await fetch("/api/flights", { cache: "no-store" });
+  const res = await fetch(`/api/flights?day=all`, { cache: "no-store" });
   const data = await res.json();
   state.raw = data;
+  state.cacheSeconds = Number(data.cacheSeconds || 60);
 
   renderKpis(data.summary || {});
   renderWarnings(data.warnings || []);
@@ -287,17 +358,24 @@ async function load() {
       }).format(new Date(data.generatedAt))
     : "—";
 
-  document.getElementById("cacheInfo").textContent = `Cache: just now • ${updated} PKT`;
+  document.getElementById("cacheInfo").textContent = `Cache updated ${updated} PKT`;
 
   refreshView();
-  refreshClock();
+  startCacheTimer();
 }
 
 document.addEventListener("click", (e) => {
   if (e.target.classList.contains("seg")) {
-    document.querySelectorAll(".seg").forEach(x => x.classList.remove("active"));
+    document.querySelectorAll(".seg").forEach((x) => x.classList.remove("active"));
     e.target.classList.add("active");
     state.day = e.target.dataset.day;
+    refreshView();
+  }
+
+  if (e.target.classList.contains("timeBtn")) {
+    document.querySelectorAll(".timeBtn").forEach((x) => x.classList.remove("active"));
+    e.target.classList.add("active");
+    state.timezoneMode = e.target.dataset.tz;
     refreshView();
   }
 });
@@ -324,7 +402,11 @@ document.getElementById("statusFilter").addEventListener("change", (e) => {
 
 document.getElementById("resetFilters").addEventListener("click", resetFilters);
 document.getElementById("exportBtn").addEventListener("click", exportRows);
-
-setInterval(refreshClock, 1000 * 30);
+document.getElementById("briefingBtn").addEventListener("click", openBriefing);
+document.getElementById("closeBriefingBtn").addEventListener("click", closeBriefing);
+document.getElementById("printBriefingBtn").addEventListener("click", () => window.print());
+document.getElementById("briefingModal").addEventListener("click", (e) => {
+  if (e.target.id === "briefingModal") closeBriefing();
+});
 
 load();

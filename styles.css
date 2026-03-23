@@ -108,7 +108,7 @@ input {
 }
 
 .cacheWrap {
-  min-width: 180px;
+  min-width: 200px;
   padding: 6px 8px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -174,21 +174,27 @@ input {
 }
 
 .topbarBtnWarning {
-  border-color: rgba(255, 176, 32, 0.45);
-  background: linear-gradient(180deg, rgba(120, 86, 12, 0.98), rgba(90, 63, 7, 0.98));
-  color: #ffe5a8;
+  border-color: rgba(255, 176, 32, 0.18);
+  background: rgba(255, 176, 32, 0.06);
+  color: #e6d4a2;
 }
 
 .topbarBtnDanger {
-  border-color: rgba(255, 95, 109, 0.38);
-  background: linear-gradient(180deg, rgba(120, 30, 42, 0.98), rgba(88, 20, 30, 0.98));
-  color: #ffd0d6;
+  border-color: rgba(255, 95, 109, 0.18);
+  background: rgba(255, 95, 109, 0.06);
+  color: #e3b8be;
 }
 
 .topbarBtnSuccess {
-  border-color: rgba(30, 203, 107, 0.40);
-  background: linear-gradient(180deg, rgba(18, 102, 56, 0.98), rgba(13, 79, 43, 0.98));
-  color: #c8ffd8;
+  border-color: rgba(30, 203, 107, 0.18);
+  background: rgba(30, 203, 107, 0.06);
+  color: #b7dcc3;
+}
+
+.topbarBtnWarning:hover,
+.topbarBtnDanger:hover,
+.topbarBtnSuccess:hover {
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .kpis {
@@ -599,15 +605,15 @@ th:nth-child(6) {
 .statusLinkCardCompact {
   display: block;
   padding: 10px 11px;
-  border: 1px solid rgba(30, 203, 107, 0.22);
+  border: 1px solid rgba(30, 203, 107, 0.16);
   border-radius: 9px;
-  background: rgba(30,203,107,0.05);
+  background: rgba(30,203,107,0.04);
   color: #dfffee;
   text-decoration: none;
 }
 
 .statusLinkCardCompact:hover {
-  background: rgba(30,203,107,0.09);
+  background: rgba(255,255,255,0.05);
 }
 
 .statusLinkNameCompact {

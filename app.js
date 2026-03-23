@@ -2,9 +2,10 @@ let state = {
   raw: null,
   day: "today",
   direction: "Both",
-  airport: "All",
+  airport: "ALL",
   airline: "All",
   status: "All",
+  includeMinor: false,
   timezoneMode: "PKT",
   cacheSeconds: 60,
   cacheRemaining: 60
@@ -100,10 +101,14 @@ function renderKpis(summary) {
 
 function fillSelect(id, items, includeAll = true) {
   const el = document.getElementById(id);
-  const current = el.value || "All";
+  const current = el.value || (includeAll ? "All" : "");
   const values = includeAll ? ["All", ...items] : items;
   el.innerHTML = values.map((v) => `<option value="${v}">${v}</option>`).join("");
-  if (values.includes(current)) el.value = current;
+  if (values.includes(current)) {
+    el.value = current;
+  } else if (values.length) {
+    el.value = includeAll ? "All" : values[0];
+  }
 }
 
 function delayText(row) {
@@ -142,6 +147,7 @@ function dayFilter(rows) {
     if (!primary) return false;
 
     const date = pakistanDateOnly(primary);
+
     if (state.day === "today") return date === today;
     if (state.day === "tomorrow") return date === tomorrow;
     return true;
@@ -157,7 +163,7 @@ function applyFilters(rows) {
     out = out.filter((r) => r.direction === state.direction);
   }
 
-  if (state.airport !== "All") {
+  if (state.airport !== "ALL" && state.airport !== "All") {
     out = out.filter((r) => r.airportCode === state.airport);
   }
 
@@ -191,9 +197,8 @@ function renderRows(rows) {
     <tr>
       <td>
         <div class="flightCell">${row.number}</div>
-        <div class="flightSub">${row.direction}</div>
       </td>
-      <td>${row.airline || "—"}</td>
+      <td title="${row.airline || ""}">${row.airline || "—"}</td>
       <td>${row.origin || "—"}</td>
       <td>${row.destination || "—"}</td>
       <td class="timeCell">${displayTime(bestDepTime(row))}</td>
@@ -220,20 +225,22 @@ function refreshView() {
 function resetFilters() {
   state.day = "today";
   state.direction = "Both";
-  state.airport = "All";
+  state.airport = "ALL";
   state.airline = "All";
   state.status = "All";
+  state.includeMinor = false;
 
   document.querySelectorAll(".seg").forEach((x) => {
     x.classList.toggle("active", x.dataset.day === "today");
   });
 
   document.getElementById("directionFilter").value = "Both";
-  document.getElementById("airportFilter").value = "All";
+  document.getElementById("airportFilter").value = "ALL";
   document.getElementById("airlineFilter").value = "All";
   document.getElementById("statusFilter").value = "All";
+  document.getElementById("minorCarrierToggle").checked = false;
 
-  refreshView();
+  load();
 }
 
 function exportRows() {
@@ -336,7 +343,12 @@ function closeBriefing() {
 }
 
 async function load() {
-  const res = await fetch(`/api/flights?day=all`, { cache: "no-store" });
+  const airportParam = state.airport === "All" ? "ALL" : state.airport;
+  const res = await fetch(
+    `/api/flights?day=all&airport=${encodeURIComponent(airportParam)}&includeMinor=${state.includeMinor}`,
+    { cache: "no-store" }
+  );
+
   const data = await res.json();
   state.raw = data;
   state.cacheSeconds = Number(data.cacheSeconds || 60);
@@ -344,10 +356,17 @@ async function load() {
   renderKpis(data.summary || {});
   renderWarnings(data.warnings || []);
 
-  fillSelect("airportFilter", safeArray(data.filtersMeta?.airports || []));
+  fillSelect("airportFilter", safeArray(data.filtersMeta?.airports || []), false);
   fillSelect("airlineFilter", safeArray(data.filtersMeta?.airlines || []));
   fillSelect("statusFilter", safeArray(data.filtersMeta?.statuses || []));
   fillSelect("directionFilter", safeArray(data.filtersMeta?.directions || []), false);
+
+  if (safeArray(data.filtersMeta?.airports || []).includes(state.airport)) {
+    document.getElementById("airportFilter").value = state.airport;
+  } else {
+    state.airport = "ALL";
+    document.getElementById("airportFilter").value = "ALL";
+  }
 
   const updated = data.generatedAt
     ? new Intl.DateTimeFormat("en-GB", {
@@ -387,7 +406,7 @@ document.getElementById("directionFilter").addEventListener("change", (e) => {
 
 document.getElementById("airportFilter").addEventListener("change", (e) => {
   state.airport = e.target.value;
-  refreshView();
+  load();
 });
 
 document.getElementById("airlineFilter").addEventListener("change", (e) => {
@@ -398,6 +417,11 @@ document.getElementById("airlineFilter").addEventListener("change", (e) => {
 document.getElementById("statusFilter").addEventListener("change", (e) => {
   state.status = e.target.value;
   refreshView();
+});
+
+document.getElementById("minorCarrierToggle").addEventListener("change", (e) => {
+  state.includeMinor = e.target.checked;
+  load();
 });
 
 document.getElementById("resetFilters").addEventListener("click", resetFilters);

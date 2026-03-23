@@ -1,22 +1,24 @@
+const DEFAULT_CACHE_SECONDS = 300;
+
 let state = {
   raw: null,
   day: "today",
   direction: "Both",
-  airport: "ALL",
+  airport: "All",
   airline: "All",
   status: "All",
-  includeMinor: false,
   timezoneMode: "PKT",
-  cacheSeconds: 300,
-  cacheRemaining: 300
+  cacheSeconds: DEFAULT_CACHE_SECONDS,
+  cacheRemaining: DEFAULT_CACHE_SECONDS,
+  refreshPaused: false,
+  activeTab: "flights"
 };
 
 const AIRLINE_STATUS_LINKS = [
   { name: "PIA", url: "https://www.piac.com.pk/", note: "Official airline site" },
   { name: "Airblue", url: "https://www.airblue.com/flightinfo/status", note: "Official flight status" },
   { name: "SereneAir", url: "https://www.sereneair.com/status", note: "Official flight status" },
-  { name: "AirSial", url: "https://airsial.com/", note: "Official airline site" },
-  { name: "Fly Jinnah", url: "https://www.flyjinnah.com/", note: "Official site with flight status" },
+  { name: "Fly Jinnah", url: "https://www.flyjinnah.com/en/Manage/Flight-Status/Check-Flight-Status", note: "Official flight status" },
   { name: "Emirates", url: "https://www.emirates.com/english/help/flight-status/", note: "Official flight status" },
   { name: "Qatar Airways", url: "https://www.qatarairways.com/en/flight-status.html", note: "Official flight status" },
   { name: "Etihad Airways", url: "https://www.etihad.com/en/manage/flight-status", note: "Official flight status" },
@@ -24,30 +26,44 @@ const AIRLINE_STATUS_LINKS = [
   { name: "Turkish Airlines", url: "https://www.turkishairlines.com/en-int/flights/flight-status/", note: "Official flight status" },
   { name: "Saudia", url: "https://www.saudia.com/pages/travel-information/flight-status", note: "Official flight status" },
   { name: "Oman Air", url: "https://www.omanair.com/gbl/en/flight-status", note: "Official flight status" },
-  { name: "flydubai", url: "https://www.flydubai.com/en/plan/timetable-and-status", note: "Official flight status" },
-  { name: "Thai Airways", url: "https://www.thaiairways.com/en-hk/content/flight-status/", note: "Official flight status" },
-  { name: "Air Arabia", url: "https://flights.airarabia.com/en-pk/", note: "Official Pakistan site" },
-  { name: "Jazeera Airways", url: "https://www.jazeeraairways.com/en-pk", note: "Official Pakistan site with flight status" },
-  { name: "China Airlines", url: "https://www.china-airlines.com/", note: "Official airline site" },
-  { name: "Air China", url: "https://www.airchina.com/", note: "Official site with flight status" },
-  { name: "Kuwait Airways", url: "https://kuwaitairways.com/en/flightstatus", note: "Official flight status" },
-  { name: "Gulf Air", url: "https://www.gulfair.com/flying-with-us/before-you-travel/flight-status", note: "Official flight status" },
-  { name: "SriLankan Airlines", url: "https://www.srilankan.com/en_uk/plan-and-book/flight-status", note: "Official flight status" }
+  { name: "flydubai", url: "https://www.flydubai.com/en/plan/timetable-and-status", note: "Official flight status" }
 ];
+
+const HUB_NAMES = {
+  DOH: "Doha",
+  DXB: "Dubai",
+  DWC: "Dubai World Central",
+  AUH: "Abu Dhabi",
+  SHJ: "Sharjah",
+  IST: "Istanbul",
+  SAW: "Sabiha Gokcen",
+  JED: "Jeddah",
+  RUH: "Riyadh",
+  BAH: "Bahrain",
+  KWI: "Kuwait",
+  BKK: "Bangkok",
+  MCT: "Muscat",
+  MED: "Madinah",
+  KUL: "Kuala Lumpur"
+};
+
+const PAKISTAN_AIRPORT_NAMES = {
+  ISB: "Islamabad",
+  LHE: "Lahore",
+  KHI: "Karachi"
+};
 
 function getTimeZoneInfo() {
   if (state.timezoneMode === "UK") {
     return {
       label: "UK time",
-      zone: "Europe/London",
-      suffix: "UK"
+      zone: "Europe/London"
     };
   }
 
   return {
     label: "Pakistan time",
-    zone: "Asia/Karachi",
-    suffix: "PKT"
+    zone: "Asia/Karachi"
   };
 }
 
@@ -71,36 +87,63 @@ function zonedDateParts(value) {
   };
 }
 
-function pakistanDateLabel(value) {
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Karachi",
-    weekday: "short",
-    day: "2-digit",
-    month: "short"
-  }).format(new Date(value));
-}
-
 function safeArray(v) {
   return Array.isArray(v) ? v : [];
+}
+
+function toMillis(value) {
+  if (!value) return 0;
+  const t = new Date(value).getTime();
+  return Number.isNaN(t) ? 0 : t;
 }
 
 function statusClass(status) {
   const s = String(status || "").toLowerCase();
   if (s.includes("cancel")) return "status-bad";
   if (s.includes("delay")) return "status-warn";
-  if (s.includes("arrived") || s.includes("departed") || s.includes("on time")) return "status-good";
+  if (s.includes("arrived") || s.includes("departed") || s.includes("landed") || s.includes("on time")) return "status-good";
   return "status-neutral";
 }
 
+function kpiPercent(part, total) {
+  if (!total) return "0%";
+  return `${Math.round((part / total) * 100)}%`;
+}
+
 function renderKpis(summary) {
+  const total = summary.totalFlights || 0;
+  const cancelled = summary.cancelled || 0;
+  const cancelledPct = kpiPercent(cancelled, total);
+
   const el = document.getElementById("kpis");
   el.innerHTML = `
-    <div class="kpi"><div class="kpiLabel">Total Flights</div><div class="kpiValue">${summary.totalFlights || 0}</div></div>
-    <div class="kpi"><div class="kpiLabel">Cancelled</div><div class="kpiValue">${summary.cancelled || 0}</div></div>
-    <div class="kpi"><div class="kpiLabel">Diverted</div><div class="kpiValue">${summary.diverted || 0}</div></div>
-    <div class="kpi"><div class="kpiLabel">Delayed >60m</div><div class="kpiValue">${summary.delayed60 || 0}</div></div>
-    <div class="kpi"><div class="kpiLabel">Pre dep Delays</div><div class="kpiValue">${summary.preDepDelays || 0}</div></div>
-    <div class="kpi"><div class="kpiLabel">Avg Delay</div><div class="kpiValue">${summary.avgDelayMinutes || 0}m</div></div>
+    <div class="kpi">
+      <div class="kpiLabel">Total Flights</div>
+      <div class="kpiValue">${total}</div>
+    </div>
+    <div class="kpi ${cancelled > 0 ? "kpiDanger" : ""}">
+      <div class="kpiLabel">Cancelled</div>
+      <div class="kpiValue">
+        ${cancelled}
+        <span class="kpiSubValue">${cancelledPct}</span>
+      </div>
+    </div>
+    <div class="kpi">
+      <div class="kpiLabel">Diverted</div>
+      <div class="kpiValue">${summary.diverted || 0}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpiLabel">Delayed >60m</div>
+      <div class="kpiValue">${summary.delayed60 || 0}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpiLabel">Pre dep Delays</div>
+      <div class="kpiValue">${summary.preDepDelays || 0}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpiLabel">Avg Delay</div>
+      <div class="kpiValue">${summary.avgDelayMinutes || 0}m</div>
+    </div>
   `;
 }
 
@@ -125,11 +168,11 @@ function displayStatus(row) {
 }
 
 function bestDepTime(row) {
-  return row.bestDep || row.actualDep || row.estimatedDep || row.scheduledDep || null;
+  return row.actualDep || row.estimatedDep || row.scheduledDep || null;
 }
 
 function bestArrTime(row) {
-  return row.bestArr || row.actualArr || row.estimatedArr || row.scheduledArr || null;
+  return row.actualArr || row.estimatedArr || row.scheduledArr || null;
 }
 
 function displayTime(value) {
@@ -137,14 +180,46 @@ function displayTime(value) {
   return zonedDateParts(value).time;
 }
 
+function todayTomorrowFilter(rows) {
+  if (state.day === "all") return rows;
+
+  const now = new Date();
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Karachi",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(now);
+
+  const tomorrowDate = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const tomorrow = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Karachi",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(tomorrowDate);
+
+  return rows.filter((row) => {
+    const primary = row.direction === "Departure" ? row.scheduledDep : row.scheduledArr;
+    if (!primary) return false;
+    const date = zonedDateParts(primary).date;
+
+    if (state.day === "today") return date === today;
+    if (state.day === "tomorrow") return date === tomorrow;
+    return true;
+  });
+}
+
 function applyFilters(rows) {
   let out = [...rows];
+
+  out = todayTomorrowFilter(out);
 
   if (state.direction !== "Both") {
     out = out.filter((r) => r.direction === state.direction);
   }
 
-  if (state.airport !== "ALL" && state.airport !== "All") {
+  if (state.airport !== "All") {
     out = out.filter((r) => r.airportCode === state.airport);
   }
 
@@ -170,14 +245,14 @@ function renderRows(rows) {
   document.getElementById("timezoneNote").textContent = getTimeZoneInfo().label;
 
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="11"><div class="emptyState">No flights match the current filters.</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="11">No flights match the current filters.</td></tr>`;
     return;
   }
 
   tbody.innerHTML = rows.map((row) => `
     <tr>
-      <td><div class="flightCell">${row.number}</div></td>
-      <td title="${row.airline || ""}">${row.airline || "—"}</td>
+      <td class="flightCell">${row.number}</td>
+      <td>${row.airline || "—"}</td>
       <td>${row.origin || "—"}</td>
       <td>${row.destination || "—"}</td>
       <td class="timeCell">${displayTime(bestDepTime(row))}</td>
@@ -195,14 +270,226 @@ function renderRows(rows) {
   `).join("");
 }
 
+function renderAirlines(rows) {
+  const tbody = document.getElementById("airlineRows");
+
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="7">No airline data for the current filters.</td></tr>`;
+    return;
+  }
+
+  const map = new Map();
+
+  rows.forEach((row) => {
+    const key = row.airline || "Unknown";
+    if (!map.has(key)) {
+      map.set(key, {
+        airline: key,
+        total: 0,
+        onTime: 0,
+        delayed: 0,
+        cancelled: 0,
+        diverted: 0,
+        delayTotal: 0,
+        delayCount: 0
+      });
+    }
+
+    const item = map.get(key);
+    item.total += 1;
+
+    if (row.status === "Cancelled") item.cancelled += 1;
+    else if (row.diverted || row.status === "Diverted") item.diverted += 1;
+    else if ((row.delayMinutes || 0) > 0 || row.status === "Delayed") item.delayed += 1;
+    else item.onTime += 1;
+
+    if ((row.delayMinutes || 0) > 0) {
+      item.delayTotal += row.delayMinutes;
+      item.delayCount += 1;
+    }
+  });
+
+  const list = [...map.values()].sort((a, b) => b.total - a.total);
+
+  tbody.innerHTML = list.map((item) => `
+    <tr>
+      <td class="flightCell">${item.airline}</td>
+      <td>${item.total}</td>
+      <td class="goodText">${item.onTime}</td>
+      <td class="warnText">${item.delayed}</td>
+      <td class="badText">${item.cancelled}</td>
+      <td>${item.diverted}</td>
+      <td>${item.delayCount ? `${Math.round(item.delayTotal / item.delayCount)}m` : "—"}</td>
+    </tr>
+  `).join("");
+}
+
+function aggregateAirportCards(rows) {
+  const pakistanMap = new Map();
+  const hubMap = new Map();
+
+  rows.forEach((row) => {
+    const pkCode = row.airportCode || "—";
+    if (!pakistanMap.has(pkCode)) {
+      pakistanMap.set(pkCode, {
+        code: pkCode,
+        name: PAKISTAN_AIRPORT_NAMES[pkCode] || pkCode,
+        arrivals: 0,
+        departures: 0,
+        disrupted: 0
+      });
+    }
+    const pk = pakistanMap.get(pkCode);
+    if (row.direction === "Arrival") pk.arrivals += 1;
+    if (row.direction === "Departure") pk.departures += 1;
+    if (row.status === "Cancelled" || row.status === "Diverted" || (row.delayMinutes || 0) >= 60) pk.disrupted += 1;
+
+    const hubCode = row.direction === "Departure" ? row.destination : row.origin;
+    if (!hubCode || hubCode === "—") return;
+
+    if (!hubMap.has(hubCode)) {
+      hubMap.set(hubCode, {
+        code: hubCode,
+        name: HUB_NAMES[hubCode] || hubCode,
+        arrivals: 0,
+        departures: 0,
+        disrupted: 0
+      });
+    }
+
+    const hub = hubMap.get(hubCode);
+    if (row.direction === "Departure") hub.departures += 1;
+    if (row.direction === "Arrival") hub.arrivals += 1;
+    if (row.status === "Cancelled" || row.status === "Diverted" || (row.delayMinutes || 0) >= 60) hub.disrupted += 1;
+  });
+
+  const pakistanCards = ["ISB", "LHE", "KHI"].map((code) => pakistanMap.get(code) || {
+    code,
+    name: PAKISTAN_AIRPORT_NAMES[code] || code,
+    arrivals: 0,
+    departures: 0,
+    disrupted: 0
+  });
+
+  const hubCards = [...hubMap.values()]
+    .filter((x) => !["ISB", "LHE", "KHI"].includes(x.code))
+    .sort((a, b) => {
+      const bScore = b.disrupted * 100 + b.arrivals + b.departures;
+      const aScore = a.disrupted * 100 + a.arrivals + a.departures;
+      return bScore - aScore;
+    })
+    .slice(0, 12);
+
+  return { pakistanCards, hubCards };
+}
+
+function renderAirportCards(rows) {
+  const pkEl = document.getElementById("pakistanAirportCards");
+  const hubEl = document.getElementById("hubAirportCards");
+  const { pakistanCards, hubCards } = aggregateAirportCards(rows);
+
+  pkEl.innerHTML = pakistanCards.map((card) => `
+    <div class="airportCard ${card.disrupted > 0 ? "airportCardAlert" : ""}">
+      <div class="airportCodeRow">
+        <div class="airportCode">${card.code}</div>
+        ${card.disrupted > 0 ? `<div class="airportAlertDot">• ${card.disrupted}</div>` : ""}
+      </div>
+      <div class="airportName">${card.name}</div>
+      <div class="airportStats">
+        <div>Arr <strong>${card.arrivals}</strong></div>
+        <div>Dep <strong>${card.departures}</strong></div>
+      </div>
+    </div>
+  `).join("");
+
+  if (!hubCards.length) {
+    hubEl.innerHTML = `<div class="emptyBlock">No hub data in the current filters.</div>`;
+    return;
+  }
+
+  hubEl.innerHTML = hubCards.map((card) => `
+    <div class="airportCard ${card.disrupted > 0 ? "airportCardAlert" : ""}">
+      <div class="airportCodeRow">
+        <div class="airportCode">${card.code}</div>
+        ${card.disrupted > 0 ? `<div class="airportAlertDot">• ${card.disrupted}</div>` : ""}
+      </div>
+      <div class="airportName">${card.name}</div>
+      <div class="airportStats">
+        <div>Arr <strong>${card.arrivals}</strong></div>
+        <div>Dep <strong>${card.departures}</strong></div>
+      </div>
+    </div>
+  `).join("");
+}
+
+function disruptionPriority(row) {
+  if (row.status === "Cancelled") return 4;
+  if (row.status === "Diverted") return 3;
+  if ((row.delayMinutes || 0) >= 120) return 2;
+  if ((row.delayMinutes || 0) >= 60) return 1;
+  return 0;
+}
+
+function disruptionLabel(row) {
+  if (row.status === "Cancelled") return "Cancelled";
+  if (row.status === "Diverted") return "Diverted";
+  if ((row.delayMinutes || 0) >= 60) return `Delayed ${row.delayMinutes}m`;
+  return row.status || "Operational";
+}
+
+function renderDisruptionFeed(rows) {
+  const el = document.getElementById("disruptionFeed");
+  const disruptions = [...rows]
+    .filter((row) => disruptionPriority(row) > 0)
+    .sort((a, b) => {
+      const priority = disruptionPriority(b) - disruptionPriority(a);
+      if (priority !== 0) return priority;
+      return toMillis(bestDepTime(a) || bestArrTime(a)) - toMillis(bestDepTime(b) || bestArrTime(b));
+    })
+    .slice(0, 6);
+
+  if (!disruptions.length) {
+    el.innerHTML = `<div class="feedEmpty">No major disruptions in the current filtered view.</div>`;
+    return;
+  }
+
+  el.innerHTML = disruptions.map((row) => {
+    const timeValue = displayTime(bestDepTime(row) || bestArrTime(row));
+    const route = `${row.origin || "—"} → ${row.destination || "—"}`;
+    return `
+      <div class="feedRow">
+        <div class="feedTime">${timeValue}</div>
+        <div class="feedFlight">${row.number}</div>
+        <div class="feedRoute">${route}</div>
+        <div class="feedStatus ${row.status === "Cancelled" ? "badText" : "warnText"}">• ${disruptionLabel(row)}</div>
+      </div>
+    `;
+  }).join("");
+}
+
+function setActiveTab(tabName) {
+  state.activeTab = tabName;
+
+  document.querySelectorAll(".tab").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.tab === tabName);
+  });
+
+  document.querySelectorAll(".tabPanel").forEach((panel) => {
+    panel.classList.toggle("active", panel.id === `tab${tabName.charAt(0).toUpperCase()}${tabName.slice(1)}`);
+  });
+}
+
 function refreshView() {
   if (!state.raw) return;
   const rows = applyFilters(state.raw.flights || []);
   renderRows(rows);
+  renderAirlines(rows);
+  renderAirportCards(rows);
+  renderDisruptionFeed(rows);
 }
 
 function updateCacheUi() {
-  const total = Math.max(1, state.cacheSeconds || 300);
+  const total = Math.max(1, state.cacheSeconds || DEFAULT_CACHE_SECONDS);
   const remaining = Math.max(0, state.cacheRemaining);
   const pct = (remaining / total) * 100;
 
@@ -211,24 +498,31 @@ function updateCacheUi() {
 
   const countdown = document.getElementById("cacheCountdown");
   const fill = document.getElementById("cacheBarFill");
+  const pauseBtn = document.getElementById("pauseRefreshBtn");
 
   if (countdown) countdown.textContent = `${minutes}:${seconds}`;
   if (fill) fill.style.width = `${pct}%`;
+  if (pauseBtn) pauseBtn.textContent = state.refreshPaused ? "▶" : "❚❚";
 }
 
 function startCacheTimer() {
-  state.cacheRemaining = state.cacheSeconds || 300;
+  state.cacheRemaining = state.cacheSeconds || DEFAULT_CACHE_SECONDS;
   updateCacheUi();
 
   if (window.cacheTimer) clearInterval(window.cacheTimer);
 
   window.cacheTimer = setInterval(() => {
+    if (state.refreshPaused) {
+      updateCacheUi();
+      return;
+    }
+
     state.cacheRemaining -= 1;
 
     if (state.cacheRemaining <= 0) {
       state.cacheRemaining = 0;
       updateCacheUi();
-      load();
+      load(true);
       return;
     }
 
@@ -236,277 +530,20 @@ function startCacheTimer() {
   }, 1000);
 }
 
-function buildInstructions() {
-  return `
-    <p><strong>What this dashboard does</strong></p>
-    <p>This dashboard provides a browser based operational flight board for Pakistan using the current flight API source. It is intended to support situational awareness during disruption rather than act as an official airport display.</p>
-
-    <p><strong>Current scope</strong></p>
-    <ul>
-      <li>Airports covered are Islamabad, Lahore and Karachi.</li>
-      <li>Day options are Today, Tomorrow and All.</li>
-      <li>Times can be shown in Pakistan time or UK time using the toggle at the top.</li>
-      <li>The cache timer shows when the dashboard will refresh again.</li>
-      <li>The board now refreshes every 5 minutes by default.</li>
-      <li>The Cancelled Tracker provides a rolling seven day cancellation view from three days back to three days ahead.</li>
-    </ul>
-
-    <p><strong>How statuses are derived</strong></p>
-    <ul>
-      <li><strong>Cancelled</strong> when cancellation evidence is present.</li>
-      <li><strong>Diverted</strong> when diversion evidence is present.</li>
-      <li><strong>Arrived</strong> when actual arrival exists.</li>
-      <li><strong>In Air</strong> when actual departure exists but actual arrival does not.</li>
-      <li><strong>Departed</strong> where departure evidence is clear.</li>
-      <li><strong>Delayed</strong> when estimated or actual time is materially later than scheduled.</li>
-      <li><strong>On Time</strong> when scheduled and estimated times align closely.</li>
-      <li><strong>Scheduled</strong> where evidence is not strong enough for a firmer status.</li>
-    </ul>
-
-    <p><strong>Assumptions</strong></p>
-    <ul>
-      <li>Departure and arrival cells show the best available operational time using actual first, then estimated, then scheduled.</li>
-      <li>Major carrier mode uses airline name, operator code and flight prefix matching.</li>
-      <li>The board is conservative and avoids guessing where evidence is weak.</li>
-      <li>The tracker uses the current airport filter and current carrier set selection.</li>
-    </ul>
-
-    <p><strong>Limitations</strong></p>
-    <ul>
-      <li>This is not an official airport or airline display.</li>
-      <li>Coverage and richness depend on the underlying source data.</li>
-      <li>The board count is the dashboard window count, not a complete all movement aviation picture.</li>
-      <li>Use the Airline Status links for operator level updates during major disruption.</li>
-      <li>The tracker is an operational aid, not a perfect historical archive.</li>
-    </ul>
-
-    <p><strong>How to use it</strong></p>
-    <ul>
-      <li>Use filters to narrow the board by day, direction, airport, airline and status.</li>
-      <li>Use Crisis for a disruption focused readout of the currently filtered board.</li>
-      <li>Use Cancelled Tracker for a rolling seven day cancellation picture.</li>
-      <li>Use Airline Status to open official airline status pages.</li>
-      <li>Use Export to download the current filtered view.</li>
-    </ul>
-  `;
-}
-
-function buildCrisisReadout() {
-  const rows = applyFilters((state.raw && state.raw.flights) || []);
-  const cancelled = rows.filter((r) => r.status === "Cancelled");
-  const delayed = rows.filter((r) => r.status === "Delayed");
-  const diverted = rows.filter((r) => r.status === "Diverted");
-  const inAir = rows.filter((r) => r.status === "In Air");
-
-  const severeDelays = delayed
-    .filter((r) => (r.delayMinutes || 0) >= 120)
-    .sort((a, b) => (b.delayMinutes || 0) - (a.delayMinutes || 0))
-    .slice(0, 6);
-
-  const keyHubs = ["DOH", "DXB", "DWC", "AUH", "IST", "SAW", "JED", "RUH", "LHR", "LGW", "BKK", "KWI", "BAH"];
-  const outboundHubs = rows
-    .filter((r) => r.direction === "Departure")
-    .filter((r) => keyHubs.some((hub) => String(r.destination || "").includes(hub)))
-    .sort((a, b) => new Date(bestDepTime(a) || 0).getTime() - new Date(bestDepTime(b) || 0).getTime())
-    .slice(0, 8);
-
-  return `
-    <p><strong>Current filtered board:</strong> ${rows.length} flights.</p>
-    <p><strong>Disruption picture:</strong> ${cancelled.length} cancelled, ${diverted.length} diverted, ${delayed.length} delayed, ${inAir.length} in air.</p>
-
-    <p><strong>Severe delays over 120 minutes:</strong></p>
-    <ul>
-      ${
-        severeDelays.length
-          ? severeDelays.map((r) => `
-              <li>${r.number} ${r.airline} departing from ${r.origin} to ${r.destination} delayed ${r.delayMinutes || 0} minutes</li>
-            `).join("")
-          : "<li>No current severe delays in filtered view.</li>"
-      }
-    </ul>
-
-    <p><strong>Next outbound options to major hubs:</strong></p>
-    <ul>
-      ${
-        outboundHubs.length
-          ? outboundHubs.map((r) => `
-              <li>${r.number} ${r.airline} departing from ${r.origin} to ${r.destination} at ${displayTime(bestDepTime(r))} showing ${r.status}</li>
-            `).join("")
-          : "<li>No major hub departures currently shown in filtered view.</li>"
-      }
-    </ul>
-
-    <p><strong>Use:</strong> This readout is for operational awareness during travel disruption and should be read alongside official airline status pages and local decision making.</p>
-  `;
-}
-
-function buildAirlineStatus() {
-  return `
-    <p><strong>Use these official airline pages alongside the board during disruption.</strong></p>
-    <div class="linkListCompact">
-      ${AIRLINE_STATUS_LINKS.map(link => `
-        <a class="statusLinkCardCompact" href="${link.url}" target="_blank" rel="noopener noreferrer">
-          <span class="statusLinkNameCompact">${link.name}</span>
-          <span class="statusLinkNoteCompact">${link.note}</span>
-        </a>
-      `).join("")}
-    </div>
-  `;
-}
-
-function buildCancelledTrackerHtml(data) {
-  const scopeAirport = state.airport === "ALL" ? "All airports" : state.airport;
-  const scopeCarriers = state.includeMinor ? "Major and smaller carriers" : "Major carriers only";
-
-  const days = safeArray(data.days || []);
-
-  return `
-    <div class="trackerIntro">
-      <div class="trackerIntroLine"><strong>Scope:</strong> ${scopeAirport} • ${scopeCarriers}</div>
-      <div class="trackerIntroLine"><strong>Window:</strong> last 3 days, today, and next 3 days</div>
-    </div>
-
-    <div class="trackerGrid">
-      ${days.map((day) => `
-        <div class="trackerDayCard">
-          <div class="trackerDayHead">
-            <div class="trackerDayTitle">${day.label || pakistanDateLabel(day.date)}</div>
-            <div class="trackerDayKpis">
-              <span>Total ${day.total || 0}</span>
-              <span>Dep ${day.departures || 0}</span>
-              <span>Arr ${day.arrivals || 0}</span>
-            </div>
-          </div>
-
-          ${
-            day.flights && day.flights.length
-              ? `
-                <div class="trackerFlights">
-                  ${day.flights.map((flight) => `
-                    <div class="trackerFlightRow">
-                      <div class="trackerFlightMain">
-                        <span class="trackerFlightNumber">${flight.number || "—"}</span>
-                        <span class="trackerFlightAirline">${flight.airline || "—"}</span>
-                      </div>
-                      <div class="trackerFlightRoute">
-                        ${flight.direction === "Departure" ? (flight.origin || "—") : (flight.origin || "—")}
-                        <span class="trackerArrow">→</span>
-                        ${flight.direction === "Departure" ? (flight.destination || "—") : (flight.destination || "—")}
-                      </div>
-                      <div class="trackerFlightMeta">
-                        <span>${flight.direction}</span>
-                        <span>${displayTime(flight.direction === "Departure" ? bestDepTime(flight) : bestArrTime(flight))}</span>
-                      </div>
-                    </div>
-                  `).join("")}
-                </div>
-              `
-              : `<div class="trackerEmpty">No cancellations shown for this day.</div>`
-          }
-        </div>
-      `).join("")}
-    </div>
-  `;
-}
-
-async function loadCancelledTracker() {
-  const body = document.getElementById("cancelledTrackerBody");
-  if (!body) return;
-
-  body.innerHTML = `<div class="trackerLoading">Loading cancellations…</div>`;
-
-  try {
-    const url = `/api/flights?tracker=cancelled&airport=${encodeURIComponent(state.airport)}&includeMinor=${state.includeMinor}`;
-    const res = await fetch(url, { cache: "no-store" });
-    const data = await res.json();
-
-    if (!res.ok) {
-      body.innerHTML = `<div class="trackerEmpty">Failed to load cancelled tracker.</div>`;
-      return;
-    }
-
-    body.innerHTML = buildCancelledTrackerHtml(data);
-  } catch (error) {
-    body.innerHTML = `<div class="trackerEmpty">Failed to load cancelled tracker.</div>`;
-  }
-}
-
-function openInstructions() {
-  const modal = document.getElementById("instructionsModal");
-  const body = document.getElementById("instructionsBody");
-  if (!modal || !body) return;
-  body.innerHTML = buildInstructions();
-  modal.classList.remove("hidden");
-}
-
-function closeInstructions() {
-  const modal = document.getElementById("instructionsModal");
-  if (modal) modal.classList.add("hidden");
-}
-
-function openCrisis() {
-  const modal = document.getElementById("crisisModal");
-  const body = document.getElementById("crisisBody");
-  if (!modal || !body) return;
-  body.innerHTML = buildCrisisReadout();
-  modal.classList.remove("hidden");
-}
-
-function closeCrisis() {
-  const modal = document.getElementById("crisisModal");
-  if (modal) modal.classList.add("hidden");
-}
-
-function openCancelledTracker() {
-  const modal = document.getElementById("cancelledTrackerModal");
-  if (!modal) return;
-  modal.classList.remove("hidden");
-  loadCancelledTracker();
-}
-
-function closeCancelledTracker() {
-  const modal = document.getElementById("cancelledTrackerModal");
-  if (modal) modal.classList.add("hidden");
-}
-
-function openAirlineStatus() {
-  const modal = document.getElementById("airlineStatusModal");
-  const body = document.getElementById("airlineStatusBody");
-  if (!modal || !body) return;
-  body.innerHTML = buildAirlineStatus();
-  modal.classList.remove("hidden");
-}
-
-function closeAirlineStatus() {
-  const modal = document.getElementById("airlineStatusModal");
-  if (modal) modal.classList.add("hidden");
-}
-
-async function load() {
-  const url = `/api/flights?day=${encodeURIComponent(state.day)}&airport=${encodeURIComponent(state.airport)}&includeMinor=${state.includeMinor}`;
-
-  const res = await fetch(url, { cache: "no-store" });
+async function load(isBackground = false) {
+  const res = await fetch("/api/flights", { cache: "no-store" });
   const data = await res.json();
-
   state.raw = data;
-  state.cacheSeconds = Number(data.cacheSeconds || 300);
+  state.cacheSeconds = Number(data.cacheSeconds || DEFAULT_CACHE_SECONDS);
+  state.cacheRemaining = state.cacheSeconds;
 
   renderKpis(data.summary || {});
   renderWarnings(data.warnings || []);
 
-  fillSelect("airportFilter", safeArray(data.filtersMeta?.airports || []), false);
+  fillSelect("airportFilter", safeArray(data.filtersMeta?.airports || []));
   fillSelect("airlineFilter", safeArray(data.filtersMeta?.airlines || []));
   fillSelect("statusFilter", safeArray(data.filtersMeta?.statuses || []));
   fillSelect("directionFilter", safeArray(data.filtersMeta?.directions || []), false);
-
-  if (safeArray(data.filtersMeta?.airports || []).includes(state.airport)) {
-    document.getElementById("airportFilter").value = state.airport;
-  } else {
-    state.airport = "ALL";
-    document.getElementById("airportFilter").value = "ALL";
-  }
-
-  document.getElementById("minorCarrierToggle").checked = state.includeMinor;
 
   const updated = data.generatedAt
     ? new Intl.DateTimeFormat("en-GB", {
@@ -517,32 +554,15 @@ async function load() {
       }).format(new Date(data.generatedAt))
     : "—";
 
-  const cacheInfo = document.getElementById("cacheInfo");
-  if (cacheInfo) cacheInfo.textContent = `Cache updated ${updated} PKT`;
+  document.getElementById("cacheInfo").textContent = `Cache updated ${updated} PKT`;
 
   refreshView();
-  startCacheTimer();
-}
 
-function resetFilters() {
-  state.day = "today";
-  state.direction = "Both";
-  state.airport = "ALL";
-  state.airline = "All";
-  state.status = "All";
-  state.includeMinor = false;
-
-  document.querySelectorAll(".seg").forEach((x) => {
-    x.classList.toggle("active", x.dataset.day === "today");
-  });
-
-  document.getElementById("directionFilter").value = "Both";
-  document.getElementById("airportFilter").value = "ALL";
-  document.getElementById("airlineFilter").value = "All";
-  document.getElementById("statusFilter").value = "All";
-  document.getElementById("minorCarrierToggle").checked = false;
-
-  load();
+  if (!isBackground) {
+    startCacheTimer();
+  } else {
+    updateCacheUi();
+  }
 }
 
 function exportRows() {
@@ -578,12 +598,108 @@ function exportRows() {
   URL.revokeObjectURL(url);
 }
 
+function buildInstructions() {
+  return `
+    <p><strong>What changed</strong></p>
+    <ul>
+      <li>Refresh now and pause controls have been added to the cache area.</li>
+      <li>Cancelled KPI now shows a percentage and highlights red when cancellations exist.</li>
+      <li>A disruption feed has been added above the filters.</li>
+      <li>Flights, Airlines and Airports tabs are now available.</li>
+    </ul>
+
+    <p><strong>Airports tab</strong></p>
+    <ul>
+      <li>Pakistan airport cards show the airport being tracked in the API response.</li>
+      <li>Hub cards are built from origin and destination data in the current filtered rows.</li>
+    </ul>
+
+    <p><strong>Important note</strong></p>
+    <p>This front end is now closer to the UAE style board. The current uploaded backend in this chat is still the simpler testing version, so richer airport and airline views depend on swapping back to your fuller multi airport API build.</p>
+  `;
+}
+
+function buildCrisisReadout() {
+  const rows = applyFilters((state.raw && state.raw.flights) || []);
+  const cancelled = rows.filter((r) => r.status === "Cancelled");
+  const delayed = rows.filter((r) => (r.delayMinutes || 0) >= 60 || r.status === "Delayed");
+  const diverted = rows.filter((r) => r.status === "Diverted" || r.diverted);
+  const severe = delayed.sort((a, b) => (b.delayMinutes || 0) - (a.delayMinutes || 0)).slice(0, 8);
+
+  return `
+    <p><strong>Current filtered board:</strong> ${rows.length} flights.</p>
+    <p><strong>Disruption picture:</strong> ${cancelled.length} cancelled, ${diverted.length} diverted, ${delayed.length} delayed over concern threshold.</p>
+
+    <p><strong>Most severe rows:</strong></p>
+    <ul>
+      ${
+        severe.length
+          ? severe.map((r) => `<li>${r.number} ${r.airline} ${r.origin} → ${r.destination} ${disruptionLabel(r)}</li>`).join("")
+          : "<li>No severe disruption rows in the current view.</li>"
+      }
+    </ul>
+  `;
+}
+
+function buildAirlineStatus() {
+  return `
+    <p><strong>Use these official airline pages alongside the board during disruption.</strong></p>
+    <div class="linkListCompact">
+      ${AIRLINE_STATUS_LINKS.map(link => `
+        <a class="statusLinkCardCompact" href="${link.url}" target="_blank" rel="noopener noreferrer">
+          <span class="statusLinkNameCompact">${link.name}</span>
+          <span class="statusLinkNoteCompact">${link.note}</span>
+        </a>
+      `).join("")}
+    </div>
+  `;
+}
+
+function openInstructions() {
+  const modal = document.getElementById("instructionsModal");
+  const body = document.getElementById("instructionsBody");
+  if (!modal || !body) return;
+  body.innerHTML = buildInstructions();
+  modal.classList.remove("hidden");
+}
+
+function closeInstructions() {
+  const modal = document.getElementById("instructionsModal");
+  if (modal) modal.classList.add("hidden");
+}
+
+function openCrisis() {
+  const modal = document.getElementById("crisisModal");
+  const body = document.getElementById("crisisBody");
+  if (!modal || !body) return;
+  body.innerHTML = buildCrisisReadout();
+  modal.classList.remove("hidden");
+}
+
+function closeCrisis() {
+  const modal = document.getElementById("crisisModal");
+  if (modal) modal.classList.add("hidden");
+}
+
+function openAirlineStatus() {
+  const modal = document.getElementById("airlineStatusModal");
+  const body = document.getElementById("airlineStatusBody");
+  if (!modal || !body) return;
+  body.innerHTML = buildAirlineStatus();
+  modal.classList.remove("hidden");
+}
+
+function closeAirlineStatus() {
+  const modal = document.getElementById("airlineStatusModal");
+  if (modal) modal.classList.add("hidden");
+}
+
 document.addEventListener("click", (e) => {
   if (e.target.classList.contains("seg")) {
     document.querySelectorAll(".seg").forEach((x) => x.classList.remove("active"));
     e.target.classList.add("active");
     state.day = e.target.dataset.day;
-    load();
+    refreshView();
   }
 
   if (e.target.classList.contains("timeBtn")) {
@@ -591,6 +707,10 @@ document.addEventListener("click", (e) => {
     e.target.classList.add("active");
     state.timezoneMode = e.target.dataset.tz;
     refreshView();
+  }
+
+  if (e.target.classList.contains("tab")) {
+    setActiveTab(e.target.dataset.tab);
   }
 });
 
@@ -601,7 +721,7 @@ document.getElementById("directionFilter").addEventListener("change", (e) => {
 
 document.getElementById("airportFilter").addEventListener("change", (e) => {
   state.airport = e.target.value;
-  load();
+  refreshView();
 });
 
 document.getElementById("airlineFilter").addEventListener("change", (e) => {
@@ -614,67 +734,53 @@ document.getElementById("statusFilter").addEventListener("change", (e) => {
   refreshView();
 });
 
-document.getElementById("minorCarrierToggle").addEventListener("change", (e) => {
-  state.includeMinor = e.target.checked;
-  load();
+document.getElementById("refreshNowBtn").addEventListener("click", () => {
+  load(true);
 });
 
-const resetBtn = document.getElementById("resetFilters");
-if (resetBtn) resetBtn.addEventListener("click", resetFilters);
+document.getElementById("pauseRefreshBtn").addEventListener("click", () => {
+  state.refreshPaused = !state.refreshPaused;
+  updateCacheUi();
+});
 
-const exportBtn = document.getElementById("exportBtn");
-if (exportBtn) exportBtn.addEventListener("click", exportRows);
+document.getElementById("exportBtn").addEventListener("click", exportRows);
 
-const instructionsBtn = document.getElementById("instructionsBtn");
-if (instructionsBtn) instructionsBtn.addEventListener("click", openInstructions);
+document.getElementById("resetFilters").addEventListener("click", () => {
+  state.day = "today";
+  state.direction = "Both";
+  state.airport = "All";
+  state.airline = "All";
+  state.status = "All";
 
-const closeInstructionsBtn = document.getElementById("closeInstructionsBtn");
-if (closeInstructionsBtn) closeInstructionsBtn.addEventListener("click", closeInstructions);
-
-const crisisBtn = document.getElementById("crisisBtn");
-if (crisisBtn) crisisBtn.addEventListener("click", openCrisis);
-
-const closeCrisisBtn = document.getElementById("closeCrisisBtn");
-if (closeCrisisBtn) closeCrisisBtn.addEventListener("click", closeCrisis);
-
-const cancelledTrackerBtn = document.getElementById("cancelledTrackerBtn");
-if (cancelledTrackerBtn) cancelledTrackerBtn.addEventListener("click", openCancelledTracker);
-
-const closeCancelledTrackerBtn = document.getElementById("closeCancelledTrackerBtn");
-if (closeCancelledTrackerBtn) closeCancelledTrackerBtn.addEventListener("click", closeCancelledTracker);
-
-const airlineStatusBtn = document.getElementById("airlineStatusBtn");
-if (airlineStatusBtn) airlineStatusBtn.addEventListener("click", openAirlineStatus);
-
-const closeAirlineStatusBtn = document.getElementById("closeAirlineStatusBtn");
-if (closeAirlineStatusBtn) closeAirlineStatusBtn.addEventListener("click", closeAirlineStatus);
-
-const instructionsModal = document.getElementById("instructionsModal");
-if (instructionsModal) {
-  instructionsModal.addEventListener("click", (e) => {
-    if (e.target.id === "instructionsModal") closeInstructions();
+  document.querySelectorAll(".seg").forEach((x) => {
+    x.classList.toggle("active", x.dataset.day === "today");
   });
-}
 
-const crisisModal = document.getElementById("crisisModal");
-if (crisisModal) {
-  crisisModal.addEventListener("click", (e) => {
-    if (e.target.id === "crisisModal") closeCrisis();
-  });
-}
+  document.getElementById("directionFilter").value = "Both";
+  document.getElementById("airportFilter").value = "All";
+  document.getElementById("airlineFilter").value = "All";
+  document.getElementById("statusFilter").value = "All";
 
-const cancelledTrackerModal = document.getElementById("cancelledTrackerModal");
-if (cancelledTrackerModal) {
-  cancelledTrackerModal.addEventListener("click", (e) => {
-    if (e.target.id === "cancelledTrackerModal") closeCancelledTracker();
-  });
-}
+  refreshView();
+});
 
-const airlineStatusModal = document.getElementById("airlineStatusModal");
-if (airlineStatusModal) {
-  airlineStatusModal.addEventListener("click", (e) => {
-    if (e.target.id === "airlineStatusModal") closeAirlineStatus();
-  });
-}
+document.getElementById("instructionsBtn").addEventListener("click", openInstructions);
+document.getElementById("closeInstructionsBtn").addEventListener("click", closeInstructions);
+document.getElementById("crisisBtn").addEventListener("click", openCrisis);
+document.getElementById("closeCrisisBtn").addEventListener("click", closeCrisis);
+document.getElementById("airlineStatusBtn").addEventListener("click", openAirlineStatus);
+document.getElementById("closeAirlineStatusBtn").addEventListener("click", closeAirlineStatus);
 
-load();
+document.getElementById("instructionsModal").addEventListener("click", (e) => {
+  if (e.target.id === "instructionsModal") closeInstructions();
+});
+
+document.getElementById("crisisModal").addEventListener("click", (e) => {
+  if (e.target.id === "crisisModal") closeCrisis();
+});
+
+document.getElementById("airlineStatusModal").addEventListener("click", (e) => {
+  if (e.target.id === "airlineStatusModal") closeAirlineStatus();
+});
+
+load().then(startCacheTimer);

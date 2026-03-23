@@ -397,6 +397,84 @@ export default async function handler(req, res) {
     };
   }
 
+  function getCancelledTrackerWindow() {
+    const now = new Date();
+
+    const localParts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Karachi",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).formatToParts(now);
+
+    const y = localParts.find((p) => p.type === "year").value;
+    const m = localParts.find((p) => p.type === "month").value;
+    const d = localParts.find((p) => p.type === "day").value;
+
+    const baseStart = new Date(`${y}-${m}-${d}T00:00:00+05:00`);
+    const startDate = new Date(baseStart.getTime() - 3 * 24 * 60 * 60 * 1000);
+    const endDate = new Date(baseStart.getTime() + 4 * 24 * 60 * 60 * 1000);
+
+    return {
+      start: startDate.toISOString().replace(".000Z", "Z"),
+      end: endDate.toISOString().replace(".000Z", "Z"),
+      baseStart
+    };
+  }
+
+  function pakistanDateKey(value) {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Karachi",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).format(new Date(value));
+  }
+
+  function pakistanDateLabelFromKey(dateKey) {
+    const iso = `${dateKey}T00:00:00+05:00`;
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Karachi",
+      weekday: "short",
+      day: "2-digit",
+      month: "short"
+    }).format(new Date(iso));
+  }
+
+  function buildTrackerDays(cancelledFlights, baseStart) {
+    const days = [];
+
+    for (let offset = -3; offset <= 3; offset += 1) {
+      const dayDate = new Date(baseStart.getTime() + offset * 24 * 60 * 60 * 1000);
+      const key = pakistanDateKey(dayDate.toISOString());
+
+      const flightsForDay = cancelledFlights
+        .filter((f) => {
+          const primaryTime = f.direction === "Departure"
+            ? (f.scheduledDep || f.bestDep || f.scheduledArr || f.bestArr)
+            : (f.scheduledArr || f.bestArr || f.scheduledDep || f.bestDep);
+
+          return primaryTime && pakistanDateKey(primaryTime) === key;
+        })
+        .sort((a, b) => {
+          const aTime = toMillis(a.bestDep || a.bestArr || a.scheduledDep || a.scheduledArr) || 0;
+          const bTime = toMillis(b.bestDep || b.bestArr || b.scheduledDep || b.scheduledArr) || 0;
+          return aTime - bTime;
+        });
+
+      days.push({
+        date: key,
+        label: pakistanDateLabelFromKey(key),
+        total: flightsForDay.length,
+        departures: flightsForDay.filter((f) => f.direction === "Departure").length,
+        arrivals: flightsForDay.filter((f) => f.direction === "Arrival").length,
+        flights: flightsForDay
+      });
+    }
+
+    return days;
+  }
+
   async function getJson(url) {
     const r = await fetch(url, { headers: headers() });
     if (!r.ok) {
@@ -407,11 +485,9 @@ export default async function handler(req, res) {
   }
 
   try {
-    const requestedDay = String(req.query.day || "today").toLowerCase();
     const requestedAirport = String(req.query.airport || "ALL").toUpperCase();
     const includeMinor = String(req.query.includeMinor || "false").toLowerCase() === "true";
-
-    const { start, end } = getPakistanWindow(requestedDay);
+    const trackerMode = String(req.query.tracker || "").toLowerCase();
 
     const airportIds =
       requestedAirport === "ALL"
@@ -440,6 +516,58 @@ export default async function handler(req, res) {
         warnings: [`No matching airport for value ${requestedAirport}`]
       });
     }
+
+    if (trackerMode === "cancelled") {
+      const { start, end, baseStart } = getCancelledTrackerWindow();
+      const allFlights = [];
+
+      for (const airportId of airportIds) {
+        const airport = AIRPORTS[airportId];
+
+        const arrivalsUrl =
+          `${base}/airports/${airportId}/flights/scheduled_arrivals?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=6`;
+
+        const departuresUrl =
+          `${base}/airports/${airportId}/flights/scheduled_departures?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=6`;
+
+        const [arrivalsRaw, departuresRaw] = await Promise.all([
+          getJson(arrivalsUrl),
+          getJson(departuresUrl)
+        ]);
+
+        const arrivals = dedupe(
+          Array.isArray(arrivalsRaw.scheduled_arrivals)
+            ? arrivalsRaw.scheduled_arrivals.map((f) => serialiseArrival(f, airport))
+            : []
+        );
+
+        const departures = dedupe(
+          Array.isArray(departuresRaw.scheduled_departures)
+            ? departuresRaw.scheduled_departures.map((f) => serialiseDeparture(f, airport))
+            : []
+        );
+
+        allFlights.push(...arrivals, ...departures);
+      }
+
+      const dedupedFlights = dedupe(allFlights);
+      const scopedFlights = includeMinor ? dedupedFlights : dedupedFlights.filter((f) => f.isMajor);
+      const cancelledFlights = scopedFlights.filter((f) => f.status === "Cancelled");
+      const days = buildTrackerDays(cancelledFlights, baseStart);
+
+      return sendJson(200, {
+        generatedAt: new Date().toISOString(),
+        cacheSeconds: 300,
+        tracker: "cancelled",
+        airport: requestedAirport,
+        includeMinor,
+        days,
+        totalCancelled: cancelledFlights.length
+      });
+    }
+
+    const requestedDay = String(req.query.day || "today").toLowerCase();
+    const { start, end } = getPakistanWindow(requestedDay);
 
     const allFlights = [];
 

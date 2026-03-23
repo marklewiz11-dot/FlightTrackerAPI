@@ -5,7 +5,7 @@ let state = {
   airport: "ALL",
   airline: "All",
   status: "All",
-  includeMinor: true,
+  includeMinor: false,
   timezoneMode: "PKT",
   cacheSeconds: 60,
   cacheRemaining: 60
@@ -287,7 +287,7 @@ function resetFilters() {
   state.airport = "ALL";
   state.airline = "All";
   state.status = "All";
-  state.includeMinor = true;
+  state.includeMinor = false;
 
   document.querySelectorAll(".seg").forEach((x) => {
     x.classList.toggle("active", x.dataset.day === "today");
@@ -297,7 +297,7 @@ function resetFilters() {
   document.getElementById("airportFilter").value = "ALL";
   document.getElementById("airlineFilter").value = "All";
   document.getElementById("statusFilter").value = "All";
-  document.getElementById("minorCarrierToggle").checked = true;
+  document.getElementById("minorCarrierToggle").checked = false;
 
   load();
 }

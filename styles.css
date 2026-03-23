@@ -3,22 +3,26 @@
   --bg2: #091428;
   --card: #0b1528;
   --card2: #0f1c33;
-  --border: rgba(90, 130, 220, 0.18);
-  --borderStrong: rgba(120, 150, 230, 0.26);
+  --card3: #13223f;
+  --border: rgba(90, 130, 220, 0.16);
+  --borderStrong: rgba(110, 150, 230, 0.24);
   --text: #edf4ff;
   --muted: #7d93b9;
+  --muted2: #566c95;
   --blue: #3aa0ff;
   --green: #1ecb6b;
   --amber: #ffb020;
   --red: #ff5f6d;
-  --row: rgba(255,255,255,0.015);
+  --row: rgba(255,255,255,0.012);
+  --shadow: 0 16px 42px rgba(0,0,0,0.24);
 }
 
 * {
   box-sizing: border-box;
 }
 
-html, body {
+html,
+body {
   margin: 0;
   padding: 0;
   background: linear-gradient(180deg, #071225 0%, #040c18 100%);
@@ -51,6 +55,7 @@ input {
   border: 1px solid var(--border);
   border-radius: 10px;
   background: linear-gradient(180deg, rgba(8, 18, 36, 0.97), rgba(6, 14, 27, 0.97));
+  box-shadow: var(--shadow);
   margin-bottom: 12px;
 }
 
@@ -63,13 +68,13 @@ input {
 .brandIcon {
   width: 34px;
   height: 34px;
-  border: 1px solid rgba(80, 150, 255, 0.35);
+  border: 1px solid rgba(80, 150, 255, 0.30);
   border-radius: 8px;
   display: grid;
   place-items: center;
   color: var(--blue);
   font-size: 15px;
-  background: rgba(58, 160, 255, 0.06);
+  background: rgba(58, 160, 255, 0.07);
 }
 
 .brandTitle {
@@ -83,7 +88,7 @@ input {
   color: var(--muted);
   font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.10em;
 }
 
 .liveDot {
@@ -194,6 +199,12 @@ input {
   color: #e3b8be;
 }
 
+.topbarBtnDangerSoft {
+  border-color: rgba(255, 95, 109, 0.14);
+  background: rgba(255, 95, 109, 0.03);
+  color: #d9b4ba;
+}
+
 .topbarBtnSuccess {
   border-color: rgba(30, 203, 107, 0.18);
   background: rgba(30, 203, 107, 0.06);
@@ -207,6 +218,7 @@ input {
   background: linear-gradient(180deg, rgba(10,20,38,0.96), rgba(10,20,38,0.88));
   border: 1px solid var(--border);
   border-radius: 10px;
+  box-shadow: var(--shadow);
 }
 
 .kpis {
@@ -273,7 +285,7 @@ input {
 
 .feedRow {
   display: grid;
-  grid-template-columns: 70px 90px 1fr 200px;
+  grid-template-columns: 70px 90px 1fr 220px;
   gap: 10px;
   align-items: center;
   padding: 4px 0;
@@ -319,7 +331,7 @@ input {
 
 .filtersGrid {
   display: grid;
-  grid-template-columns: 1.5fr repeat(4, 1fr);
+  grid-template-columns: 1.5fr repeat(5, 1fr);
   gap: 8px;
 }
 
@@ -340,14 +352,33 @@ input {
   border-radius: 8px;
   padding: 9px 10px;
   height: 36px;
-}
-
-.compactSelect select {
   font-size: 12px;
 }
 
 .filterWide {
   grid-column: span 1;
+}
+
+.checkboxBlock {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.checkboxRow {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #121d33;
+  color: var(--text) !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  margin-bottom: 0 !important;
+  font-size: 12px !important;
 }
 
 .segmented {
@@ -490,6 +521,32 @@ tbody tr:hover {
   color: #4de488;
 }
 
+.percentText {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.perfBar {
+  width: 96px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.08);
+  overflow: hidden;
+  display: flex;
+}
+
+.perfGood {
+  background: #25d366;
+}
+
+.perfWarn {
+  background: #ffb020;
+}
+
+.perfBad {
+  background: #ff5f6d;
+}
+
 .statusPill {
   display: inline-flex;
   align-items: center;
@@ -566,7 +623,7 @@ tbody tr:hover {
 }
 
 .airportCard {
-  min-height: 116px;
+  min-height: 126px;
   padding: 14px;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -601,14 +658,22 @@ tbody tr:hover {
   font-size: 12px;
 }
 
-.airportStats {
+.airportStatsLine {
   display: flex;
-  gap: 24px;
+  flex-wrap: wrap;
+  gap: 12px;
   margin-top: 12px;
-  font-size: 13px;
+  font-size: 12px;
 }
 
-.emptyBlock {
+.airportNext {
+  margin-top: 12px;
+  color: #dce7fb;
+  font-size: 12px;
+}
+
+.emptyBlock,
+.emptyState {
   color: var(--muted);
   font-size: 12px;
   padding: 10px 0;
@@ -636,6 +701,7 @@ tbody tr:hover {
   border: 1px solid var(--borderStrong);
   border-radius: 12px;
   background: linear-gradient(180deg, rgba(9,18,35,0.99), rgba(7,14,26,0.99));
+  box-shadow: var(--shadow);
 }
 
 .modalCardWide {
@@ -678,6 +744,15 @@ tbody tr:hover {
   line-height: 1.55;
 }
 
+.briefingBody p {
+  margin: 0 0 12px;
+}
+
+.briefingBody ul {
+  margin: 0 0 12px 18px;
+  padding: 0;
+}
+
 .linkListCompact {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -710,6 +785,106 @@ tbody tr:hover {
   font-size: 11px;
 }
 
+.trackerLoading,
+.trackerEmpty,
+.trackerEmptySmall {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.trackerIntro {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.02);
+}
+
+.trackerIntroLine {
+  font-size: 12px;
+  color: #dce7fb;
+}
+
+.trackerGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.trackerDayCard {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.02);
+  overflow: hidden;
+}
+
+.trackerDayHead {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(100, 130, 220, 0.10);
+  background: rgba(255,255,255,0.02);
+}
+
+.trackerDayTitle {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.trackerDayKpis {
+  display: flex;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.trackerFlights {
+  padding: 6px 8px;
+}
+
+.trackerFlightRow {
+  padding: 8px 6px;
+  border-bottom: 1px solid rgba(100, 130, 220, 0.08);
+}
+
+.trackerFlightRow:last-child {
+  border-bottom: 0;
+}
+
+.trackerFlightMain {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-bottom: 3px;
+}
+
+.trackerFlightNumber {
+  font-weight: 700;
+  color: #ffb0b8;
+}
+
+.trackerFlightAirline {
+  color: #dce7fb;
+  font-size: 12px;
+}
+
+.trackerFlightRoute,
+.trackerFlightMeta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.trackerArrow {
+  opacity: 0.8;
+}
+
 @media (max-width: 1200px) {
   .kpis {
     grid-template-columns: repeat(3, 1fr);
@@ -723,8 +898,9 @@ tbody tr:hover {
     grid-template-columns: repeat(2, 1fr);
   }
 
-  .linkListCompact {
-    grid-template-columns: repeat(2, 1fr);
+  .linkListCompact,
+  .trackerGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -740,7 +916,8 @@ tbody tr:hover {
 
   .filtersGrid,
   .airportGrid,
-  .linkListCompact {
+  .linkListCompact,
+  .trackerGrid {
     grid-template-columns: 1fr;
   }
 

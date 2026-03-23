@@ -561,8 +561,8 @@ export default async function handler(req, res) {
         tracker: "cancelled",
         airport: requestedAirport,
         includeMinor,
-        days,
-        totalCancelled: cancelledFlights.length
+        totalCancelled: cancelledFlights.length,
+        days
       });
     }
 

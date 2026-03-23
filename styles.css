@@ -256,7 +256,8 @@ input {
 .feedCard,
 .filtersCard,
 .tableCard,
-.kpi {
+.kpi,
+.paxControlCard {
   background: linear-gradient(180deg, rgba(10,20,38,0.96), rgba(10,20,38,0.88));
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -265,7 +266,7 @@ input {
 
 .kpis {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 8px;
   margin-bottom: 10px;
 }
@@ -304,6 +305,33 @@ input {
 .kpiDanger .kpiValue,
 .kpiDanger .kpiSubValue {
   color: #ff707c;
+}
+
+.paxControlCard {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+}
+
+.paxControlRow {
+  display: grid;
+  grid-template-columns: 170px 1fr 100px;
+  gap: 12px;
+  align-items: center;
+}
+
+.paxControlLabel,
+.paxControlHint {
+  font-size: 12px;
+  color: #dce7fb;
+}
+
+.paxControlHint {
+  color: var(--muted);
+  text-align: right;
+}
+
+#loadFactorSlider {
+  width: 100%;
 }
 
 .feedCard {
@@ -861,9 +889,14 @@ tbody tr:hover {
     grid-template-columns: 1fr;
   }
 
-  .feedRow {
+  .feedRow,
+  .paxControlRow {
     grid-template-columns: 1fr;
-    gap: 3px;
+    gap: 6px;
     padding: 8px 0;
+  }
+
+  .paxControlHint {
+    text-align: left;
   }
 }

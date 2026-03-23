@@ -139,6 +139,54 @@ input {
   border-radius: 999px;
 }
 
+.staleWrap {
+  min-width: 92px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.staleLabel {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.stalePill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.staleFresh {
+  background: rgba(30,203,107,0.10);
+  color: #89eab2;
+  border-color: rgba(30,203,107,0.16);
+}
+
+.staleWarn {
+  background: rgba(255,176,32,0.10);
+  color: #ffd27a;
+  border-color: rgba(255,176,32,0.16);
+}
+
+.stalePaused {
+  background: rgba(58,160,255,0.10);
+  color: #9dcfff;
+  border-color: rgba(58,160,255,0.16);
+}
+
 .iconBtn {
   width: 32px;
   height: 32px;
@@ -197,12 +245,6 @@ input {
   border-color: rgba(255, 95, 109, 0.18);
   background: rgba(255, 95, 109, 0.06);
   color: #e3b8be;
-}
-
-.topbarBtnDangerSoft {
-  border-color: rgba(255, 95, 109, 0.14);
-  background: rgba(255, 95, 109, 0.03);
-  color: #d9b4ba;
 }
 
 .topbarBtnSuccess {
@@ -785,106 +827,6 @@ tbody tr:hover {
   font-size: 11px;
 }
 
-.trackerLoading,
-.trackerEmpty,
-.trackerEmptySmall {
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.trackerIntro {
-  margin-bottom: 14px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: rgba(255,255,255,0.02);
-}
-
-.trackerIntroLine {
-  font-size: 12px;
-  color: #dce7fb;
-}
-
-.trackerGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.trackerDayCard {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: rgba(255,255,255,0.02);
-  overflow: hidden;
-}
-
-.trackerDayHead {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: center;
-  padding: 10px 12px;
-  border-bottom: 1px solid rgba(100, 130, 220, 0.10);
-  background: rgba(255,255,255,0.02);
-}
-
-.trackerDayTitle {
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.trackerDayKpis {
-  display: flex;
-  gap: 10px;
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.trackerFlights {
-  padding: 6px 8px;
-}
-
-.trackerFlightRow {
-  padding: 8px 6px;
-  border-bottom: 1px solid rgba(100, 130, 220, 0.08);
-}
-
-.trackerFlightRow:last-child {
-  border-bottom: 0;
-}
-
-.trackerFlightMain {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-  margin-bottom: 3px;
-}
-
-.trackerFlightNumber {
-  font-weight: 700;
-  color: #ffb0b8;
-}
-
-.trackerFlightAirline {
-  color: #dce7fb;
-  font-size: 12px;
-}
-
-.trackerFlightRoute,
-.trackerFlightMeta {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.trackerArrow {
-  opacity: 0.8;
-}
-
 @media (max-width: 1200px) {
   .kpis {
     grid-template-columns: repeat(3, 1fr);
@@ -898,8 +840,7 @@ tbody tr:hover {
     grid-template-columns: repeat(2, 1fr);
   }
 
-  .linkListCompact,
-  .trackerGrid {
+  .linkListCompact {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -916,8 +857,7 @@ tbody tr:hover {
 
   .filtersGrid,
   .airportGrid,
-  .linkListCompact,
-  .trackerGrid {
+  .linkListCompact {
     grid-template-columns: 1fr;
   }
 

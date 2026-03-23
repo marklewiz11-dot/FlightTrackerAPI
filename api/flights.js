@@ -33,7 +33,15 @@ export default async function handler(req, res) {
     WY: "Oman Air",
     OMA: "Oman Air",
     FZ: "flydubai",
-    FDB: "flydubai"
+    FDB: "flydubai",
+    TG: "Thai Airways",
+    THA: "Thai Airways",
+    G9: "Air Arabia",
+    ABY: "Air Arabia",
+    J9: "Jazeera Airways",
+    JZR: "Jazeera Airways",
+    CI: "China Airlines",
+    CAL: "China Airlines"
   };
 
   const MAJOR_AIRLINE_PATTERNS = [
@@ -49,7 +57,13 @@ export default async function handler(req, res) {
     "turkish",
     "saudia",
     "oman air",
-    "flydubai"
+    "flydubai",
+    "thai",
+    "thai airways",
+    "air arabia",
+    "jazeera",
+    "jazeera airways",
+    "china airlines"
   ];
 
   const MAJOR_AIRLINE_CODES = new Set([
@@ -64,7 +78,11 @@ export default async function handler(req, res) {
     "TK", "THY",
     "SV", "SVA",
     "WY", "OMA",
-    "FZ", "FDB"
+    "FZ", "FDB",
+    "TG", "THA",
+    "G9", "ABY",
+    "J9", "JZR",
+    "CI", "CAL"
   ]);
 
   function headers() {

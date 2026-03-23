@@ -20,7 +20,6 @@
       <div class="topbarRight">
         <button class="topbarBtn topbarBtnWarning" id="instructionsBtn">Instructions</button>
         <button class="topbarBtn topbarBtnDanger" id="crisisBtn">Crisis</button>
-        <button class="topbarBtn topbarBtnDangerSoft" id="cancelledTrackerBtn">Cancelled Tracker</button>
         <button class="topbarBtn topbarBtnSuccess" id="airlineStatusBtn">Airline Status</button>
 
         <div class="cacheWrap">
@@ -33,6 +32,9 @@
           </div>
         </div>
 
+        <button class="iconBtn" id="refreshNowBtn" title="Refresh now">↻</button>
+        <button class="iconBtn" id="pauseRefreshBtn" title="Pause refresh">❚❚</button>
+
         <div class="timeToggle">
           <button class="timeBtn active" data-tz="PKT">PKT</button>
           <button class="timeBtn" data-tz="UK">UK</button>
@@ -43,6 +45,11 @@
     </header>
 
     <section class="kpis" id="kpis"></section>
+
+    <section class="feedCard" id="feedCard">
+      <div class="feedTitle">Disruption Feed</div>
+      <div id="disruptionFeed"></div>
+    </section>
 
     <section class="filtersCard">
       <div class="sectionHead">
@@ -60,7 +67,7 @@
           </div>
         </div>
 
-        <div class="filterGroup">
+        <div class="filterGroup compactSelect">
           <label>Direction</label>
           <select id="directionFilter">
             <option value="Both">Both</option>
@@ -83,21 +90,15 @@
           <label>Status</label>
           <select id="statusFilter"></select>
         </div>
-
-        <div class="filterGroup checkboxBlock">
-          <label>Carrier set</label>
-          <label class="checkboxRow">
-            <input type="checkbox" id="minorCarrierToggle" />
-            <span>Show smaller carriers</span>
-          </label>
-        </div>
       </div>
     </section>
 
     <section class="tableCard">
       <div class="tableToolbar">
         <div class="tableToolbarLeft">
-          <div class="tab active">Flights <span id="flightCount">0</span></div>
+          <button class="tab active" data-tab="flights">Flights <span id="flightCount">0</span></button>
+          <button class="tab" data-tab="airlines">Airlines</button>
+          <button class="tab" data-tab="airports">Airports</button>
         </div>
         <div class="tableToolbarRight">
           <div class="toolbarNote" id="timezoneNote">Pakistan time</div>
@@ -106,25 +107,57 @@
 
       <div id="warnings" class="warnings"></div>
 
-      <div class="tableWrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Flight</th>
-              <th>Airline</th>
-              <th>Origin</th>
-              <th>Dest</th>
-              <th>Dep</th>
-              <th>Arr</th>
-              <th>Status</th>
-              <th>Delay</th>
-              <th>A/C</th>
-              <th>Type</th>
-              <th>Div</th>
-            </tr>
-          </thead>
-          <tbody id="flightRows"></tbody>
-        </table>
+      <div id="tabFlights" class="tabPanel active">
+        <div class="tableWrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Flight</th>
+                <th>Airline</th>
+                <th>Origin</th>
+                <th>Dest</th>
+                <th>Dep</th>
+                <th>Arr</th>
+                <th>Status</th>
+                <th>Delay</th>
+                <th>A/C</th>
+                <th>Type</th>
+                <th>Div</th>
+              </tr>
+            </thead>
+            <tbody id="flightRows"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="tabAirlines" class="tabPanel">
+        <div class="tableWrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Airline</th>
+                <th>Total</th>
+                <th>On Time</th>
+                <th>Delayed</th>
+                <th>Cancelled</th>
+                <th>Diverted</th>
+                <th>Avg Delay</th>
+              </tr>
+            </thead>
+            <tbody id="airlineRows"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="tabAirports" class="tabPanel">
+        <div class="airportSection">
+          <div class="airportSectionTitle">Pakistan Airports</div>
+          <div class="airportGrid" id="pakistanAirportCards"></div>
+        </div>
+        <div class="airportSection">
+          <div class="airportSectionTitle">Key Hubs</div>
+          <div class="airportGrid" id="hubAirportCards"></div>
+        </div>
       </div>
     </section>
   </div>
@@ -146,18 +179,6 @@
         <button class="closeBtn" id="closeCrisisBtn">Close</button>
       </div>
       <div class="briefingBody" id="crisisBody"></div>
-    </div>
-  </div>
-
-  <div class="modal hidden" id="cancelledTrackerModal">
-    <div class="modalCard modalCardWide">
-      <div class="modalHead">
-        <div class="modalTitle">Cancelled Tracker</div>
-        <button class="closeBtn" id="closeCancelledTrackerBtn">Close</button>
-      </div>
-      <div class="briefingBody" id="cancelledTrackerBody">
-        <div class="trackerLoading">Loading cancellations…</div>
-      </div>
     </div>
   </div>
 

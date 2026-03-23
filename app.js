@@ -71,6 +71,15 @@ function zonedDateParts(value) {
   };
 }
 
+function pakistanDateLabel(value) {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Karachi",
+    weekday: "short",
+    day: "2-digit",
+    month: "short"
+  }).format(new Date(value));
+}
+
 function safeArray(v) {
   return Array.isArray(v) ? v : [];
 }
@@ -239,6 +248,7 @@ function buildInstructions() {
       <li>Times can be shown in Pakistan time or UK time using the toggle at the top.</li>
       <li>The cache timer shows when the dashboard will refresh again.</li>
       <li>The board now refreshes every 5 minutes by default.</li>
+      <li>The Cancelled Tracker provides a rolling seven day cancellation view from three days back to three days ahead.</li>
     </ul>
 
     <p><strong>How statuses are derived</strong></p>
@@ -258,6 +268,7 @@ function buildInstructions() {
       <li>Departure and arrival cells show the best available operational time using actual first, then estimated, then scheduled.</li>
       <li>Major carrier mode uses airline name, operator code and flight prefix matching.</li>
       <li>The board is conservative and avoids guessing where evidence is weak.</li>
+      <li>The tracker uses the current airport filter and current carrier set selection.</li>
     </ul>
 
     <p><strong>Limitations</strong></p>
@@ -266,12 +277,14 @@ function buildInstructions() {
       <li>Coverage and richness depend on the underlying source data.</li>
       <li>The board count is the dashboard window count, not a complete all movement aviation picture.</li>
       <li>Use the Airline Status links for operator level updates during major disruption.</li>
+      <li>The tracker is an operational aid, not a perfect historical archive.</li>
     </ul>
 
     <p><strong>How to use it</strong></p>
     <ul>
       <li>Use filters to narrow the board by day, direction, airport, airline and status.</li>
       <li>Use Crisis for a disruption focused readout of the currently filtered board.</li>
+      <li>Use Cancelled Tracker for a rolling seven day cancellation picture.</li>
       <li>Use Airline Status to open official airline status pages.</li>
       <li>Use Export to download the current filtered view.</li>
     </ul>
@@ -341,6 +354,83 @@ function buildAirlineStatus() {
   `;
 }
 
+function buildCancelledTrackerHtml(data) {
+  const scopeAirport = state.airport === "ALL" ? "All airports" : state.airport;
+  const scopeCarriers = state.includeMinor ? "Major and smaller carriers" : "Major carriers only";
+
+  const days = safeArray(data.days || []);
+
+  return `
+    <div class="trackerIntro">
+      <div class="trackerIntroLine"><strong>Scope:</strong> ${scopeAirport} • ${scopeCarriers}</div>
+      <div class="trackerIntroLine"><strong>Window:</strong> last 3 days, today, and next 3 days</div>
+    </div>
+
+    <div class="trackerGrid">
+      ${days.map((day) => `
+        <div class="trackerDayCard">
+          <div class="trackerDayHead">
+            <div class="trackerDayTitle">${day.label || pakistanDateLabel(day.date)}</div>
+            <div class="trackerDayKpis">
+              <span>Total ${day.total || 0}</span>
+              <span>Dep ${day.departures || 0}</span>
+              <span>Arr ${day.arrivals || 0}</span>
+            </div>
+          </div>
+
+          ${
+            day.flights && day.flights.length
+              ? `
+                <div class="trackerFlights">
+                  ${day.flights.map((flight) => `
+                    <div class="trackerFlightRow">
+                      <div class="trackerFlightMain">
+                        <span class="trackerFlightNumber">${flight.number || "—"}</span>
+                        <span class="trackerFlightAirline">${flight.airline || "—"}</span>
+                      </div>
+                      <div class="trackerFlightRoute">
+                        ${flight.direction === "Departure" ? (flight.origin || "—") : (flight.origin || "—")}
+                        <span class="trackerArrow">→</span>
+                        ${flight.direction === "Departure" ? (flight.destination || "—") : (flight.destination || "—")}
+                      </div>
+                      <div class="trackerFlightMeta">
+                        <span>${flight.direction}</span>
+                        <span>${displayTime(flight.direction === "Departure" ? bestDepTime(flight) : bestArrTime(flight))}</span>
+                      </div>
+                    </div>
+                  `).join("")}
+                </div>
+              `
+              : `<div class="trackerEmpty">No cancellations shown for this day.</div>`
+          }
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+async function loadCancelledTracker() {
+  const body = document.getElementById("cancelledTrackerBody");
+  if (!body) return;
+
+  body.innerHTML = `<div class="trackerLoading">Loading cancellations…</div>`;
+
+  try {
+    const url = `/api/flights?tracker=cancelled&airport=${encodeURIComponent(state.airport)}&includeMinor=${state.includeMinor}`;
+    const res = await fetch(url, { cache: "no-store" });
+    const data = await res.json();
+
+    if (!res.ok) {
+      body.innerHTML = `<div class="trackerEmpty">Failed to load cancelled tracker.</div>`;
+      return;
+    }
+
+    body.innerHTML = buildCancelledTrackerHtml(data);
+  } catch (error) {
+    body.innerHTML = `<div class="trackerEmpty">Failed to load cancelled tracker.</div>`;
+  }
+}
+
 function openInstructions() {
   const modal = document.getElementById("instructionsModal");
   const body = document.getElementById("instructionsBody");
@@ -364,6 +454,18 @@ function openCrisis() {
 
 function closeCrisis() {
   const modal = document.getElementById("crisisModal");
+  if (modal) modal.classList.add("hidden");
+}
+
+function openCancelledTracker() {
+  const modal = document.getElementById("cancelledTrackerModal");
+  if (!modal) return;
+  modal.classList.remove("hidden");
+  loadCancelledTracker();
+}
+
+function closeCancelledTracker() {
+  const modal = document.getElementById("cancelledTrackerModal");
   if (modal) modal.classList.add("hidden");
 }
 
@@ -535,6 +637,12 @@ if (crisisBtn) crisisBtn.addEventListener("click", openCrisis);
 const closeCrisisBtn = document.getElementById("closeCrisisBtn");
 if (closeCrisisBtn) closeCrisisBtn.addEventListener("click", closeCrisis);
 
+const cancelledTrackerBtn = document.getElementById("cancelledTrackerBtn");
+if (cancelledTrackerBtn) cancelledTrackerBtn.addEventListener("click", openCancelledTracker);
+
+const closeCancelledTrackerBtn = document.getElementById("closeCancelledTrackerBtn");
+if (closeCancelledTrackerBtn) closeCancelledTrackerBtn.addEventListener("click", closeCancelledTracker);
+
 const airlineStatusBtn = document.getElementById("airlineStatusBtn");
 if (airlineStatusBtn) airlineStatusBtn.addEventListener("click", openAirlineStatus);
 
@@ -552,6 +660,13 @@ const crisisModal = document.getElementById("crisisModal");
 if (crisisModal) {
   crisisModal.addEventListener("click", (e) => {
     if (e.target.id === "crisisModal") closeCrisis();
+  });
+}
+
+const cancelledTrackerModal = document.getElementById("cancelledTrackerModal");
+if (cancelledTrackerModal) {
+  cancelledTrackerModal.addEventListener("click", (e) => {
+    if (e.target.id === "cancelledTrackerModal") closeCancelledTracker();
   });
 }
 

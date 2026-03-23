@@ -362,7 +362,7 @@ export default async function handler(req, res) {
     if (!airportIds.length) {
       return res.status(200).json({
         generatedAt: new Date().toISOString(),
-        cacheSeconds: 60,
+        cacheSeconds: 300,
         filtersMeta: {
           airports: ["ALL", ...Object.values(AIRPORTS).map((a) => a.code)],
           airlines: [],
@@ -438,7 +438,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       generatedAt: new Date().toISOString(),
-      cacheSeconds: 60,
+      cacheSeconds: 300,
       filtersMeta: {
         airports: ["ALL", ...Object.values(AIRPORTS).map((a) => a.code)],
         airlines: [...new Set(flights.map((f) => f.airline).filter(Boolean))].sort(),
@@ -457,14 +457,13 @@ export default async function handler(req, res) {
       warnings: [
         includeMinor
           ? `Pakistan major and smaller carriers shown. ${dedupedFlights.length} total flights in board window.`
-          : `Major carriers only. ${majorFlights.length} flights matched major carrier rules.`,
-        "FlightAware source. Pakistan day window."
+          : `Major carriers only. ${majorFlights.length} flights matched major carrier rules.`
       ]
     });
   } catch (error) {
     return res.status(500).json({
       generatedAt: new Date().toISOString(),
-      cacheSeconds: 60,
+      cacheSeconds: 300,
       filtersMeta: {
         airports: [],
         airlines: [],

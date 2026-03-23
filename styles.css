@@ -173,6 +173,12 @@ input {
   font-size: 12px;
 }
 
+.topbarBtnWarning {
+  border-color: rgba(255, 176, 32, 0.45);
+  background: linear-gradient(180deg, rgba(120, 86, 12, 0.98), rgba(90, 63, 7, 0.98));
+  color: #ffe5a8;
+}
+
 .kpis {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
@@ -301,18 +307,31 @@ input {
 .checkboxRow {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   min-height: 34px;
+  height: 34px;
   padding: 0 10px;
   border: 1px solid var(--border);
   border-radius: 7px;
   background: #121d33;
   color: var(--text);
   font-size: 12px;
+  text-transform: none;
+  line-height: 1;
+  text-align: center;
 }
 
 .checkboxRow input {
   margin: 0;
+  position: relative;
+  top: 0;
+}
+
+.checkboxRow span {
+  display: inline-flex;
+  align-items: center;
+  height: 100%;
 }
 
 .tableToolbar {
@@ -542,6 +561,15 @@ th:nth-child(6) {
   color: #dce8fc;
   line-height: 1.5;
   font-size: 13px;
+}
+
+.briefingBody ul {
+  margin: 8px 0 14px 18px;
+  padding: 0;
+}
+
+.briefingBody p {
+  margin: 0 0 10px;
 }
 
 .modalActions {

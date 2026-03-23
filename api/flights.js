@@ -105,6 +105,15 @@ export default async function handler(req, res) {
     "CI", "CAL"
   ]);
 
+  function setCacheHeaders() {
+    res.setHeader("Cache-Control", "public, s-maxage=300, stale-while-revalidate=60");
+  }
+
+  function sendJson(statusCode, payload) {
+    setCacheHeaders();
+    return res.status(statusCode).json(payload);
+  }
+
   function headers() {
     return {
       "x-apikey": apiKey,
@@ -410,7 +419,7 @@ export default async function handler(req, res) {
         : Object.keys(AIRPORTS).filter((id) => AIRPORTS[id].code === requestedAirport);
 
     if (!airportIds.length) {
-      return res.status(200).json({
+      return sendJson(200, {
         generatedAt: new Date().toISOString(),
         cacheSeconds: 300,
         filtersMeta: {
@@ -465,7 +474,6 @@ export default async function handler(req, res) {
 
     const dedupedFlights = dedupe(allFlights);
     const majorFlights = dedupedFlights.filter((f) => f.isMajor);
-
     const flights = includeMinor ? dedupedFlights : majorFlights;
 
     flights.sort((a, b) => {
@@ -486,7 +494,7 @@ export default async function handler(req, res) {
       ? Math.round(avgDelay.reduce((sum, f) => sum + (f.delayMinutes || 0), 0) / avgDelay.length)
       : 0;
 
-    return res.status(200).json({
+    return sendJson(200, {
       generatedAt: new Date().toISOString(),
       cacheSeconds: 300,
       filtersMeta: {
@@ -511,7 +519,7 @@ export default async function handler(req, res) {
       ]
     });
   } catch (error) {
-    return res.status(500).json({
+    return sendJson(500, {
       generatedAt: new Date().toISOString(),
       cacheSeconds: 300,
       filtersMeta: {

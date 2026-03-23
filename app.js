@@ -99,16 +99,6 @@ function zonedDateParts(value) {
   };
 }
 
-function pakistanDayLabel(dateKey) {
-  const iso = `${dateKey}T00:00:00+05:00`;
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Karachi",
-    weekday: "short",
-    day: "2-digit",
-    month: "short"
-  }).format(new Date(iso));
-}
-
 function safeArray(v) {
   return Array.isArray(v) ? v : [];
 }
@@ -525,10 +515,10 @@ function buildInstructions() {
       <li>The disruption feed surfaces the most severe currently filtered rows first.</li>
       <li>The airline tab shows total, on time, delayed and cancelled with coloured percentages and a simple performance bar.</li>
       <li>The airport tab shows total rows, cancelled rows, delayed over 60, and next movement for Pakistan airports and key hubs.</li>
-      <li>The cancelled tracker uses a rolling seven day window from three days back to three days ahead.</li>
       <li>The airline status modal links out to official airline pages for disruption cross checks.</li>
       <li>Times can be toggled between Pakistan time and UK time.</li>
       <li>The board refreshes on a 5 minute cache cycle unless paused.</li>
+      <li>To reduce API cost, the cancelled tracker has been removed and the main fetch depth is capped at 3 pages per endpoint.</li>
     </ul>
 
     <p><strong>How the disruption feed works</strong></p>
@@ -546,9 +536,6 @@ function buildInstructions() {
       <li>Lists the most severe affected rows.</li>
       <li>Shows the next available outbound options to key hubs such as Doha, Dubai, Abu Dhabi, Istanbul, Jeddah, Riyadh, Bahrain, Kuwait, Bangkok, Heathrow and Gatwick.</li>
     </ul>
-
-    <p><strong>Cancelled tracker note</strong></p>
-    <p>If no cancellations are returned in the current window, the tracker will say so clearly. Treat it as an operational aid rather than a perfect historical archive.</p>
   `;
 }
 
@@ -607,72 +594,6 @@ function buildAirlineStatus() {
           <span class="statusLinkNameCompact">${link.name}</span>
           <span class="statusLinkNoteCompact">${link.note}</span>
         </a>
-      `).join("")}
-    </div>
-  `;
-}
-
-function buildCancelledTrackerHtml(data) {
-  const scopeAirport = state.airport === "ALL" ? "All airports" : state.airport;
-  const scopeCarriers = state.includeMinor ? "Major and smaller carriers" : "Major carriers only";
-  const days = safeArray(data?.days || []);
-  const totalCancelled = Number(data?.totalCancelled || 0);
-
-  if (!days.length || totalCancelled === 0) {
-    return `
-      <div class="trackerIntro">
-        <div class="trackerIntroLine"><strong>Scope:</strong> ${scopeAirport} • ${scopeCarriers}</div>
-        <div class="trackerIntroLine"><strong>Window:</strong> last 3 days, today, and next 3 days</div>
-      </div>
-      <div class="trackerEmpty">No cancellations shown in this window.</div>
-    `;
-  }
-
-  return `
-    <div class="trackerIntro">
-      <div class="trackerIntroLine"><strong>Scope:</strong> ${scopeAirport} • ${scopeCarriers}</div>
-      <div class="trackerIntroLine"><strong>Window:</strong> last 3 days, today, and next 3 days</div>
-      <div class="trackerIntroLine"><strong>Total cancellations shown:</strong> ${totalCancelled}</div>
-    </div>
-
-    <div class="trackerGrid">
-      ${days.map((day) => `
-        <div class="trackerDayCard">
-          <div class="trackerDayHead">
-            <div class="trackerDayTitle">${day.label || pakistanDayLabel(day.date)}</div>
-            <div class="trackerDayKpis">
-              <span>Total ${day.total || 0}</span>
-              <span>Dep ${day.departures || 0}</span>
-              <span>Arr ${day.arrivals || 0}</span>
-            </div>
-          </div>
-
-          ${
-            safeArray(day.flights).length
-              ? `
-                <div class="trackerFlights">
-                  ${safeArray(day.flights).map((flight) => `
-                    <div class="trackerFlightRow">
-                      <div class="trackerFlightMain">
-                        <span class="trackerFlightNumber">${flight.number || "—"}</span>
-                        <span class="trackerFlightAirline">${flight.airline || "—"}</span>
-                      </div>
-                      <div class="trackerFlightRoute">
-                        ${flight.origin || "—"}
-                        <span class="trackerArrow">→</span>
-                        ${flight.destination || "—"}
-                      </div>
-                      <div class="trackerFlightMeta">
-                        <span>${flight.direction}</span>
-                        <span>${displayTime(flight.direction === "Departure" ? bestDepTime(flight) : bestArrTime(flight))}</span>
-                      </div>
-                    </div>
-                  `).join("")}
-                </div>
-              `
-              : `<div class="trackerEmptySmall">No cancellations shown for this day.</div>`
-          }
-        </div>
       `).join("")}
     </div>
   `;
@@ -788,29 +709,6 @@ async function load(isBackground = false) {
   }
 }
 
-async function loadCancelledTracker() {
-  const body = document.getElementById("cancelledTrackerBody");
-  if (!body) return;
-
-  body.innerHTML = `<div class="trackerLoading">Loading cancellations…</div>`;
-
-  try {
-    const url = `/api/flights?tracker=cancelled&airport=${encodeURIComponent(state.airport)}&includeMinor=${state.includeMinor}`;
-    const res = await fetch(url, { cache: "no-store" });
-    const data = await res.json().catch(() => null);
-
-    if (!res.ok) {
-      const msg = data?.warnings?.[0] || data?.error || "Failed to load cancelled tracker.";
-      body.innerHTML = `<div class="trackerEmpty">${msg}</div>`;
-      return;
-    }
-
-    body.innerHTML = buildCancelledTrackerHtml(data || {});
-  } catch (error) {
-    body.innerHTML = `<div class="trackerEmpty">Failed to load cancelled tracker.</div>`;
-  }
-}
-
 function exportRows() {
   if (!state.raw) return;
 
@@ -867,18 +765,6 @@ function openCrisis() {
 
 function closeCrisis() {
   const modal = document.getElementById("crisisModal");
-  if (modal) modal.classList.add("hidden");
-}
-
-function openCancelledTracker() {
-  const modal = document.getElementById("cancelledTrackerModal");
-  if (!modal) return;
-  modal.classList.remove("hidden");
-  loadCancelledTracker();
-}
-
-function closeCancelledTracker() {
-  const modal = document.getElementById("cancelledTrackerModal");
   if (modal) modal.classList.add("hidden");
 }
 
@@ -976,8 +862,6 @@ document.getElementById("instructionsBtn").addEventListener("click", openInstruc
 document.getElementById("closeInstructionsBtn").addEventListener("click", closeInstructions);
 document.getElementById("crisisBtn").addEventListener("click", openCrisis);
 document.getElementById("closeCrisisBtn").addEventListener("click", closeCrisis);
-document.getElementById("cancelledTrackerBtn").addEventListener("click", openCancelledTracker);
-document.getElementById("closeCancelledTrackerBtn").addEventListener("click", closeCancelledTracker);
 document.getElementById("airlineStatusBtn").addEventListener("click", openAirlineStatus);
 document.getElementById("closeAirlineStatusBtn").addEventListener("click", closeAirlineStatus);
 
@@ -987,10 +871,6 @@ document.getElementById("instructionsModal").addEventListener("click", (e) => {
 
 document.getElementById("crisisModal").addEventListener("click", (e) => {
   if (e.target.id === "crisisModal") closeCrisis();
-});
-
-document.getElementById("cancelledTrackerModal").addEventListener("click", (e) => {
-  if (e.target.id === "cancelledTrackerModal") closeCancelledTracker();
 });
 
 document.getElementById("airlineStatusModal").addEventListener("click", (e) => {

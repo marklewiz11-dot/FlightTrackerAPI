@@ -22,24 +22,24 @@
         <button class="topbarBtn topbarBtnDanger" id="crisisBtn">Crisis</button>
         <button class="topbarBtn topbarBtnSuccess" id="airlineStatusBtn">Airline Status</button>
 
-        <div class="cacheWrap">
+        <div class="cacheWrap compactTopCard">
           <div class="cacheRow">
             <span id="cacheInfo">Cache updated</span>
-            <span id="cacheCountdown">20:00</span>
+            <span id="cacheCountdown">60:00</span>
           </div>
           <div class="cacheBar">
             <div class="cacheBarFill" id="cacheBarFill"></div>
           </div>
         </div>
 
-        <div class="staleWrap">
+        <div class="staleWrap compactTopCard">
           <span class="staleLabel">Status</span>
           <span class="stalePill staleFresh" id="staleStatus">Fresh</span>
         </div>
 
         <button class="iconBtn" id="pauseRefreshBtn" title="Pause refresh">❚❚</button>
 
-        <div class="timeRefWrap">
+        <div class="timeRefWrap compactTopCard">
           <span class="timeRefLabel">Time reference</span>
           <div class="timeToggle">
             <button class="timeBtn active" data-tz="PKT">PKT</button>
@@ -50,6 +50,10 @@
         <button class="topbarBtn" id="exportBtn">Export</button>
       </div>
     </header>
+
+    <div id="cacheWarningBar" class="cacheWarningBar hidden">
+      <div id="cacheWarningText" class="cacheWarningText"></div>
+    </div>
 
     <section class="kpis" id="kpis"></section>
 
@@ -122,7 +126,6 @@
             <span class="toolbarLoadFactorHint">PAX estimate</span>
           </div>
         </div>
-
         <div class="tableToolbarRight">
           <div class="toolbarNote" id="timezoneNote">Pakistan Standard Time</div>
         </div>

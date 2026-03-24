@@ -39,9 +39,12 @@
 
         <button class="iconBtn" id="pauseRefreshBtn" title="Pause refresh">❚❚</button>
 
-        <div class="timeToggle">
-          <button class="timeBtn active" data-tz="PKT">PKT</button>
-          <button class="timeBtn" data-tz="UK">UK</button>
+        <div class="timeRefWrap">
+          <span class="timeRefLabel">Time reference</span>
+          <div class="timeToggle">
+            <button class="timeBtn active" data-tz="PKT">PKT</button>
+            <button class="timeBtn" data-tz="UK">UK</button>
+          </div>
         </div>
 
         <button class="topbarBtn" id="exportBtn">Export</button>
@@ -49,14 +52,6 @@
     </header>
 
     <section class="kpis" id="kpis"></section>
-
-    <section class="paxControlCard">
-      <div class="paxControlRow">
-        <div class="paxControlLabel">Load factor: <strong id="loadFactorValue">85%</strong></div>
-        <input type="range" id="loadFactorSlider" min="50" max="100" step="1" value="85" />
-        <div class="paxControlHint">PAX estimate</div>
-      </div>
-    </section>
 
     <section class="feedCard">
       <div class="feedTitle">Disruption Feed</div>
@@ -70,12 +65,24 @@
       </div>
 
       <div class="filtersGrid">
-        <div class="filterGroup filterWide">
+        <div class="filterGroup filterWide dayFilterGroup">
           <label>Day</label>
           <div class="segmented">
             <button class="seg active" data-day="today">Today</button>
             <button class="seg" data-day="tomorrow">Tomorrow</button>
             <button class="seg" data-day="all">All</button>
+          </div>
+          <div class="uaeLoadFactorCard">
+            <div class="uaeLoadFactorTop">
+              <span class="uaeLoadFactorLabel">Load factor</span>
+              <strong class="uaeLoadFactorValue" id="loadFactorValue">85%</strong>
+            </div>
+            <input type="range" id="loadFactorSlider" min="50" max="100" step="1" value="85" />
+            <div class="uaeLoadFactorScale">
+              <span>50%</span>
+              <span>PAX estimate</span>
+              <span>100%</span>
+            </div>
           </div>
         </div>
 
@@ -111,6 +118,7 @@
           </label>
         </div>
       </div>
+
     </section>
 
     <section class="tableCard">
@@ -121,7 +129,7 @@
           <button class="tab" data-tab="airports">Airports</button>
         </div>
         <div class="tableToolbarRight">
-          <div class="toolbarNote" id="timezoneNote">Pakistan time</div>
+          <div class="toolbarNote" id="timezoneNote">Pakistan Standard Time</div>
         </div>
       </div>
 
@@ -142,6 +150,7 @@
                 <th>Delay</th>
                 <th>A/C</th>
                 <th>Type</th>
+                <th>Est. PAX</th>
                 <th>Div</th>
               </tr>
             </thead>

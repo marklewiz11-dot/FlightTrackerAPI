@@ -1,5 +1,5 @@
 export default async function handler(req, res) {
-  const apiKey = "PASTE_YOUR_FLIGHTAWARE_KEY_HERE";
+  const apiKey = "hn1UO6XF9P3DrZPwMPi5ABgWXEV3wrvF";
   const base = "https://aeroapi.flightaware.com/aeroapi";
   const CACHE_SECONDS = 3600;
 

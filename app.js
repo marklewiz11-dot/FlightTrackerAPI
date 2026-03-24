@@ -1,5 +1,4 @@
 const DEFAULT_CACHE_SECONDS = 3600;
-const WARNING_THRESHOLD_SECONDS = 55 * 60;
 
 let state = {
   raw: null,
@@ -14,7 +13,7 @@ let state = {
   cacheRemaining: DEFAULT_CACHE_SECONDS,
   refreshPaused: false,
   activeTab: "flights",
-  lastLoadedAt: null,
+  datasetGeneratedAtMs: null,
   lastLoadFailed: false,
   loadFactor: 85
 };
@@ -84,10 +83,18 @@ const AIRCRAFT_CAPACITY = {
   "739": 215, "772": 314, "77W": 396, "788": 248, "789": 290
 };
 
+function getWarningThresholdSeconds() {
+  const cacheWindow = state.cacheSeconds || DEFAULT_CACHE_SECONDS;
+  return Math.max(0, cacheWindow - 300);
+}
+
+function getDataAgeSeconds() {
+  if (!state.datasetGeneratedAtMs) return 0;
+  return Math.max(0, Math.floor((Date.now() - state.datasetGeneratedAtMs) / 1000));
+}
+
 function getTimeZoneInfo() {
-  if (state.timezoneMode === "UK") {
-    return { label: "United Kingdom time", zone: "Europe/London" };
-  }
+  if (state.timezoneMode === "UK") return { label: "United Kingdom time", zone: "Europe/London" };
   return { label: "Pakistan Standard Time", zone: "Asia/Karachi" };
 }
 
@@ -173,16 +180,16 @@ function renderLoadFactorUi() {
   if (label) label.textContent = `${state.loadFactor}%`;
 }
 
-function renderKpis(summaryRows) {
-  const total = summaryRows.length;
-  const cancelled = summaryRows.filter(isCancelled);
-  const diverted = summaryRows.filter(isDiverted);
-  const delayed60 = summaryRows.filter(isDelayed60);
-  const disrupted = summaryRows.filter(isDisrupted);
-  const preDepDelays = summaryRows.filter((f) => f.direction === "Departure" && isDelayed(f) && !f.actualDep);
+function renderKpis(rows) {
+  const total = rows.length;
+  const cancelled = rows.filter(isCancelled);
+  const diverted = rows.filter(isDiverted);
+  const delayed60 = rows.filter(isDelayed60);
+  const disrupted = rows.filter(isDisrupted);
+  const preDepDelays = rows.filter((f) => f.direction === "Departure" && isDelayed(f) && !f.actualDep);
 
   const avgDelayMinutes = (() => {
-    const delayed = summaryRows.filter(isDelayed);
+    const delayed = rows.filter(isDelayed);
     return delayed.length ? Math.round(delayed.reduce((sum, f) => sum + Number(f.delayMinutes || 0), 0) / delayed.length) : 0;
   })();
 
@@ -265,32 +272,26 @@ function renderRows(rows) {
   }
 
   tbody.innerHTML = rows.map((row) => {
-    const flightNumber = escapeHtml(row.number || "—");
-    const airline = escapeHtml(row.airline || "—");
-    const origin = escapeHtml(row.origin || "—");
-    const destination = escapeHtml(row.destination || "—");
-    const aircraft = escapeHtml(row.aircraft || "—");
-    const type = escapeHtml(row.type || "—");
     const pax = formatNumber(estimatePax(row));
-    const meta = `${aircraft} • ${type} • LF ${state.loadFactor}% • ~${pax} PAX`;
+    const meta = `${row.aircraft || "—"} • ${row.type || "—"} • LF ${state.loadFactor}% • ~${pax} PAX`;
 
     return `
       <tr>
         <td class="flightCell">
           <div class="flightCellWrap">
-            <span class="flightPrimary">${flightNumber}</span>
+            <span class="flightPrimary">${escapeHtml(row.number || "—")}</span>
             <span class="flightMetaRow">${escapeHtml(meta)}</span>
           </div>
         </td>
-        <td title="${airline}">${airline}</td>
-        <td>${origin}</td>
-        <td>${destination}</td>
+        <td>${escapeHtml(row.airline || "—")}</td>
+        <td>${escapeHtml(row.origin || "—")}</td>
+        <td>${escapeHtml(row.destination || "—")}</td>
         <td class="timeCell">${displayTime(bestDepTime(row))}</td>
         <td class="timeCell">${displayTime(bestArrTime(row))}</td>
         <td><span class="statusPill ${statusClass(row.status)}"><span class="statusDot"></span>${displayStatus(row)}</span></td>
         <td class="delayCell">${delayText(row)}</td>
-        <td>${aircraft}</td>
-        <td>${type}</td>
+        <td>${escapeHtml(row.aircraft || "—")}</td>
+        <td>${escapeHtml(row.type || "—")}</td>
         <td><span class="paxCellValue">~${pax}</span><span class="tableSubMeta">LF ${state.loadFactor}%</span></td>
         <td>${row.diverted ? "Yes" : "—"}</td>
       </tr>`;
@@ -307,7 +308,9 @@ function renderAirlines(rows) {
   const map = new Map();
   rows.forEach((row) => {
     const key = row.airline || "Unknown";
-    if (!map.has(key)) map.set(key, { airline: key, total: 0, estPax: 0, onTime: 0, delayed: 0, cancelled: 0, diverted: 0, delayTotal: 0, delayCount: 0 });
+    if (!map.has(key)) {
+      map.set(key, { airline: key, total: 0, estPax: 0, onTime: 0, delayed: 0, cancelled: 0, diverted: 0, delayTotal: 0, delayCount: 0 });
+    }
     const item = map.get(key);
     item.total += 1;
     item.estPax += estimatePax(row);
@@ -315,6 +318,7 @@ function renderAirlines(rows) {
     else if (isDiverted(row)) item.diverted += 1;
     else if (isDelayed(row) || row.status === "Delayed") item.delayed += 1;
     else item.onTime += 1;
+
     if (isDelayed(row)) {
       item.delayTotal += Number(row.delayMinutes || 0);
       item.delayCount += 1;
@@ -325,11 +329,11 @@ function renderAirlines(rows) {
   tbody.innerHTML = list.map((item) => {
     const delayedPct = item.total ? Math.round((item.delayed / item.total) * 100) : 0;
     const cancelledPct = item.total ? Math.round((item.cancelled / item.total) * 100) : 0;
-    const avgDelay = item.delayCount ? `${Math.round(item.delayTotal / item.delayCount)}m` : "—";
     const goodPct = item.total ? Math.round((item.onTime / item.total) * 100) : 0;
+    const avgDelay = item.delayCount ? `${Math.round(item.delayTotal / item.delayCount)}m` : "—";
     return `
       <tr>
-        <td class="flightCell">${item.airline}</td>
+        <td class="flightCell">${escapeHtml(item.airline)}</td>
         <td>${item.total}</td>
         <td>~${formatNumber(item.estPax)}</td>
         <td class="goodText">${item.onTime} <span class="percentText">(${goodPct}%)</span></td>
@@ -343,10 +347,13 @@ function renderAirlines(rows) {
 }
 
 function getNextMovementText(rowsForCard) {
-  const candidates = rowsForCard.map((row) => {
-    const t = row.direction === "Departure" ? (bestDepTime(row) || row.scheduledDep) : (bestArrTime(row) || row.scheduledArr);
-    return { row, time: t, millis: toMillis(t) };
-  }).filter((x) => x.millis > 0).sort((a, b) => a.millis - b.millis);
+  const candidates = rowsForCard
+    .map((row) => {
+      const t = row.direction === "Departure" ? (bestDepTime(row) || row.scheduledDep) : (bestArrTime(row) || row.scheduledArr);
+      return { row, time: t, millis: toMillis(t) };
+    })
+    .filter((x) => x.millis > 0)
+    .sort((a, b) => a.millis - b.millis);
 
   if (!candidates.length) return "No movement shown";
   const item = candidates[0];
@@ -360,7 +367,14 @@ function renderAirportCards(rows) {
 
   const pakistanCards = ["ISB", "LHE", "KHI"].map((code) => {
     const subset = rows.filter((r) => r.airportCode === code);
-    return { code, name: PAKISTAN_AIRPORT_NAMES[code] || code, total: subset.length, cancelled: subset.filter((r) => r.status === "Cancelled").length, delayed: subset.filter(isDelayed60).length, nextMovement: getNextMovementText(subset) };
+    return {
+      code,
+      name: PAKISTAN_AIRPORT_NAMES[code] || code,
+      total: subset.length,
+      cancelled: subset.filter(isCancelled).length,
+      delayed: subset.filter(isDelayed60).length,
+      nextMovement: getNextMovementText(subset)
+    };
   });
 
   const hubMap = new Map();
@@ -371,9 +385,17 @@ function renderAirportCards(rows) {
     hubMap.get(hubCode).push(row);
   });
 
-  const hubCards = [...hubMap.entries()].map(([code, subset]) => ({
-    code, name: HUB_NAMES[code] || code, total: subset.length, cancelled: subset.filter((r) => r.status === "Cancelled").length, delayed: subset.filter(isDelayed60).length, nextMovement: getNextMovementText(subset)
-  })).sort((a, b) => (b.cancelled * 100 + b.delayed * 10 + b.total) - (a.cancelled * 100 + a.delayed * 10 + a.total)).slice(0, 12);
+  const hubCards = [...hubMap.entries()]
+    .map(([code, subset]) => ({
+      code,
+      name: HUB_NAMES[code] || code,
+      total: subset.length,
+      cancelled: subset.filter(isCancelled).length,
+      delayed: subset.filter(isDelayed60).length,
+      nextMovement: getNextMovementText(subset)
+    }))
+    .sort((a, b) => (b.cancelled * 100 + b.delayed * 10 + b.total) - (a.cancelled * 100 + a.delayed * 10 + a.total))
+    .slice(0, 12);
 
   pkEl.innerHTML = pakistanCards.map((card) => `
     <div class="airportCard ${card.cancelled > 0 ? "airportCardAlert" : ""}">
@@ -399,11 +421,14 @@ function renderAirportCards(rows) {
 
 function renderDisruptionFeed(rows) {
   const el = document.getElementById("disruptionFeed");
-  const disruptions = [...rows].filter(isDisrupted).sort((a, b) => {
-    const priority = disruptionPriority(b) - disruptionPriority(a);
-    if (priority !== 0) return priority;
-    return toMillis(bestDepTime(a) || bestArrTime(a)) - toMillis(bestDepTime(b) || bestArrTime(b));
-  }).slice(0, 6);
+  const disruptions = [...rows]
+    .filter(isDisrupted)
+    .sort((a, b) => {
+      const priority = disruptionPriority(b) - disruptionPriority(a);
+      if (priority !== 0) return priority;
+      return toMillis(bestDepTime(a) || bestArrTime(a)) - toMillis(bestDepTime(b) || bestArrTime(b));
+    })
+    .slice(0, 6);
 
   if (!disruptions.length) {
     el.innerHTML = `<div class="feedEmpty">No major disruptions in the current filtered view.</div>`;
@@ -413,8 +438,13 @@ function renderDisruptionFeed(rows) {
   el.innerHTML = disruptions.map((row) => {
     const timeValue = displayTime(bestDepTime(row) || bestArrTime(row));
     const route = `${row.origin || "—"} → ${row.destination || "—"}`;
-    return `<div class="feedRow"><div class="feedTime">${timeValue}</div><div class="feedFlight">${row.number}</div><div class="feedRoute">${route}</div><div class="feedStatus ${row.status === "Cancelled" ? "badText" : "warnText"}">• ${disruptionLabel(row)}</div></div>`;
+    return `<div class="feedRow"><div class="feedTime">${timeValue}</div><div class="feedFlight">${row.number}</div><div class="feedRoute">${route}</div><div class="feedStatus ${isCancelled(row) ? "badText" : "warnText"}">• ${disruptionLabel(row)}</div></div>`;
   }).join("");
+}
+
+function renderLoadFactorAndTimeUi() {
+  renderLoadFactorUi();
+  document.getElementById("timezoneNote").textContent = getTimeZoneInfo().label;
 }
 
 function renderStaleStatus() {
@@ -422,49 +452,130 @@ function renderStaleStatus() {
   if (!pill) return;
   pill.className = "stalePill";
 
-  if (state.refreshPaused) { pill.textContent = "Paused"; pill.classList.add("stalePaused"); return; }
-  if (!state.lastLoadedAt) { pill.textContent = "Loading"; pill.classList.add("staleWarn"); return; }
+  if (state.refreshPaused) {
+    pill.textContent = "Paused";
+    pill.classList.add("stalePaused");
+    return;
+  }
 
-  const ageSeconds = Math.floor((Date.now() - state.lastLoadedAt) / 1000);
-  const staleThreshold = (state.cacheSeconds || DEFAULT_CACHE_SECONDS) * 2;
-  if (state.lastLoadFailed || ageSeconds > staleThreshold) { pill.textContent = "Stale"; pill.classList.add("staleWarn"); return; }
+  if (!state.datasetGeneratedAtMs) {
+    pill.textContent = "Loading";
+    pill.classList.add("staleWarn");
+    return;
+  }
+
+  const ageSeconds = getDataAgeSeconds();
+  if (state.lastLoadFailed || ageSeconds >= getWarningThresholdSeconds()) {
+    pill.textContent = "Stale";
+    pill.classList.add("staleWarn");
+    return;
+  }
+
   pill.textContent = "Fresh";
   pill.classList.add("staleFresh");
 }
 
+function renderCacheWarning() {
+  const bar = document.getElementById("cacheWarningBar");
+  const text = document.getElementById("cacheWarningText");
+  if (!bar || !text) return;
+
+  if (!state.datasetGeneratedAtMs) {
+    bar.classList.add("hidden");
+    return;
+  }
+
+  const ageSeconds = getDataAgeSeconds();
+  const ageMinutes = Math.floor(ageSeconds / 60);
+
+  if (state.lastLoadFailed || ageSeconds >= getWarningThresholdSeconds()) {
+    text.textContent = `Data is ${ageMinutes} minute${ageMinutes === 1 ? "" : "s"} old and may be stale. A fresh shared dataset should appear on the next cache refresh.`;
+    bar.classList.remove("hidden");
+    return;
+  }
+
+  bar.classList.add("hidden");
+}
+
+function renderCacheMeta() {
+  const ageEl = document.getElementById("cacheAgeInfo");
+  const cycleEl = document.getElementById("cacheCycleInfo");
+  if (ageEl) {
+    const ageMinutes = Math.floor(getDataAgeSeconds() / 60);
+    ageEl.textContent = `Data age ${ageMinutes}m`;
+  }
+  if (cycleEl) {
+    cycleEl.textContent = `Shared ${Math.round((state.cacheSeconds || DEFAULT_CACHE_SECONDS) / 60)}m cache`;
+  }
+}
+
 function buildInstructions() {
+  const warningMinutes = Math.floor(getWarningThresholdSeconds() / 60);
   return `
-    <p><strong>Current board features</strong></p>
+    <p><strong>What this dashboard is for</strong></p>
     <ul>
-      <li>Pakistan board covers Islamabad, Lahore and Karachi.</li>
-      <li>Default view is Islamabad. Use the airport filter to expand to Lahore, Karachi, or All airports.</li>
-      <li>Manual refresh has been removed to reduce API cost.</li>
-      <li>The board uses a shared 1 hour cache unless paused.</li>
-      <li>The status pill shows Fresh, Stale, or Paused.</li>
-      <li>The PKT and UK buttons set the time reference for all displayed flight times.</li>
-      <li>The small time note above the table reflects the active time reference, either Pakistan Standard Time or United Kingdom time.</li>
-      <li>The cancelled KPI shows count and percentage and highlights when cancellations are present.</li>
-      <li>The disruption feed surfaces the most severe currently filtered rows first.</li>
-      <li>The airline tab shows total, estimated passengers, on time, delayed and cancelled with coloured percentages and a simple performance bar.</li>
-      <li>The airport tab shows total rows, cancelled rows, delayed over 60, and next movement for Pakistan airports and key hubs.</li>
-      <li>The airline status modal links out to official airline pages for disruption cross checks.</li>
-      <li>The load factor slider now sits inline beside Flights, Airlines and Airports in a compact UAE style control and defaults to 85%.</li>
-      <li>Estimated PAX is shown both in the dedicated Flights table PAX column and inside each main flight row meta line, and recalculates locally when the load factor changes.</li>
+      <li>This board is a fast operational view of scheduled passenger flights relevant to Pakistan, focused on Islamabad, Lahore and Karachi.</li>
+      <li>It is designed for monitoring disruptions, understanding likely passenger impact, and giving a quick operational picture without repeatedly calling the upstream API for every filter change.</li>
     </ul>
 
-    <p><strong>Cost saving design</strong></p>
+    <p><strong>How the model works</strong></p>
     <ul>
-      <li>The backend fetches one broader window for all three airports on each shared cache cycle.</li>
-      <li>Day, airport, carrier set, direction, airline, status and load factor now work locally in the browser.</li>
-      <li>This means filter changes do not trigger new FlightAware calls.</li>
-      <li>Main fetch depth is capped at 3 pages per endpoint.</li>
+      <li>The backend fetches a broad scheduled arrivals and scheduled departures window for the three Pakistan airports.</li>
+      <li>That backend response is then placed behind a shared one hour CDN cache. Shared means users opening the board within the same cache window see the same dataset.</li>
+      <li>If nobody opens the dashboard, there should be no new data pull. The first user after cache expiry triggers the next refresh.</li>
+      <li>The countdown at the top is tied to the shared cached dataset generation time, not to when your browser tab opened.</li>
+      <li>The <strong>Cache updated</strong> time is when that shared dataset was created.</li>
+      <li>The <strong>Data age</strong> value shows how old the current dataset is right now.</li>
+      <li>The status stays <strong>Fresh</strong> until the final five minutes of the cache window. It switches to <strong>Stale</strong> from minute ${warningMinutes} onwards, or immediately if a refresh fails.</li>
+      <li>The red warning bar appears in the same final five minute window, or if a refresh fails.</li>
     </ul>
 
-    <p><strong>PAX estimate note</strong></p>
+    <p><strong>What PAX means</strong></p>
     <ul>
-      <li>PAX numbers are estimates, not booked passenger data.</li>
-      <li>They are based on aircraft type seat assumptions multiplied by the selected load factor.</li>
-      <li>Unknown aircraft types fall back to a conservative default estimate.</li>
+      <li><strong>PAX</strong> means passengers.</li>
+      <li>These are not booked passenger numbers from the airline. They are an estimate.</li>
+      <li>The estimate is calculated from the aircraft type seat capacity multiplied by the selected load factor.</li>
+      <li>Example: if an aircraft is assumed to have 180 seats and the load factor slider is set to 85%, the board estimates about 153 PAX.</li>
+      <li>Unknown aircraft types fall back to a conservative default seat assumption.</li>
+    </ul>
+
+    <p><strong>How to use the board</strong></p>
+    <ul>
+      <li><strong>Day</strong> switches between today, tomorrow and all flights in the cached dataset.</li>
+      <li><strong>Direction</strong> filters arrivals, departures or both.</li>
+      <li><strong>Airport</strong> switches between Islamabad, Lahore, Karachi or all airports.</li>
+      <li><strong>Airline</strong> narrows the board to one carrier.</li>
+      <li><strong>Status</strong> narrows the board to one operational state such as delayed or cancelled.</li>
+      <li><strong>Show smaller carriers</strong> expands beyond the main airline set used for the operational view.</li>
+      <li><strong>PKT / UK</strong> switches the displayed time reference for all times in the board.</li>
+      <li><strong>Load factor</strong> changes only the passenger estimate logic. It does not change flight status or times.</li>
+      <li><strong>Export</strong> downloads the currently filtered flights view as CSV.</li>
+    </ul>
+
+    <p><strong>How the tabs work</strong></p>
+    <ul>
+      <li><strong>Flights</strong> shows the individual flight rows.</li>
+      <li><strong>Airlines</strong> groups the currently filtered flights by airline and shows volume, estimated passenger totals and simple performance indicators.</li>
+      <li><strong>Airports</strong> gives a quick overview for Pakistan airports and key hubs, including cancellation counts, delays over 60 minutes and next movement.</li>
+    </ul>
+
+    <p><strong>How the KPIs work</strong></p>
+    <ul>
+      <li><strong>Total Flights</strong> is the total currently visible after all filters.</li>
+      <li><strong>Cancelled</strong> shows the number of cancelled flights and the percentage of the visible board.</li>
+      <li><strong>Diverted</strong> shows flights marked diverted.</li>
+      <li><strong>Delayed &gt;60m</strong> counts flights delayed by 60 minutes or more.</li>
+      <li><strong>Pre dep Delays</strong> shows delayed departures that have not yet actually departed.</li>
+      <li><strong>Avg Delay</strong> uses only genuinely delayed flights.</li>
+      <li><strong>Cancelled PAX</strong>, <strong>Diverted PAX</strong> and <strong>Delayed &gt;60 PAX</strong> sum estimated passengers only for the flights in those categories.</li>
+      <li><strong>Total Disrupted PAX</strong> sums estimated passengers only for cancelled, diverted, or delayed over 60 minutes. It does not include unaffected flights.</li>
+    </ul>
+
+    <p><strong>Operational notes</strong></p>
+    <ul>
+      <li>The disruption feed surfaces the most severe rows in the current filtered view.</li>
+      <li>The airline status modal links out to official airline pages for external cross checks.</li>
+      <li>This dashboard is an operational picture, not a source of official passenger manifests, ticket data or final airline control information.</li>
     </ul>`;
 }
 
@@ -474,14 +585,21 @@ function buildCrisisReadout() {
   const delayed = rows.filter(isDelayed60);
   const diverted = rows.filter(isDiverted);
 
-  const severe = rows.filter((r) => disruptionPriority(r) > 0).sort((a, b) => {
-    const p = disruptionPriority(b) - disruptionPriority(a);
-    if (p !== 0) return p;
-    return (b.delayMinutes || 0) - (a.delayMinutes || 0);
-  }).slice(0, 8);
+  const severe = rows
+    .filter((r) => disruptionPriority(r) > 0)
+    .sort((a, b) => {
+      const p = disruptionPriority(b) - disruptionPriority(a);
+      if (p !== 0) return p;
+      return Number(b.delayMinutes || 0) - Number(a.delayMinutes || 0);
+    })
+    .slice(0, 8);
 
   const keyHubs = ["DOH", "DXB", "DWC", "AUH", "IST", "SAW", "JED", "RUH", "LHR", "LGW", "BKK", "KWI", "BAH"];
-  const nextOutboundHubs = rows.filter((r) => r.direction === "Departure").filter((r) => keyHubs.includes(String(r.destination || "").toUpperCase())).sort((a, b) => toMillis(bestDepTime(a) || a.scheduledDep) - toMillis(bestDepTime(b) || b.scheduledDep)).slice(0, 8);
+  const nextOutboundHubs = rows
+    .filter((r) => r.direction === "Departure")
+    .filter((r) => keyHubs.includes(String(r.destination || "").toUpperCase()))
+    .sort((a, b) => toMillis(bestDepTime(a) || a.scheduledDep) - toMillis(bestDepTime(b) || b.scheduledDep))
+    .slice(0, 8);
 
   const cancelledPax = cancelled.reduce((sum, f) => sum + estimatePax(f), 0);
   const delayedPax = delayed.reduce((sum, f) => sum + estimatePax(f), 0);
@@ -491,7 +609,8 @@ function buildCrisisReadout() {
     <p><strong>Current filtered board:</strong> ${rows.length} flights.</p>
     <p><strong>Active time reference:</strong> ${getTimeZoneInfo().label}.</p>
     <p><strong>Current load factor assumption:</strong> ${state.loadFactor}%.</p>
-    <p><strong>Disruption picture:</strong> ${cancelled.length} cancelled, ${diverted.length} diverted, ${delayed.length} delayed over concern threshold.</p>
+    <p><strong>Current shared data age:</strong> ${Math.floor(getDataAgeSeconds() / 60)} minutes.</p>
+    <p><strong>Disruption picture:</strong> ${cancelled.length} cancelled, ${diverted.length} diverted, ${delayed.length} delayed over 60 minutes.</p>
     <p><strong>Estimated affected passengers:</strong> ~${formatNumber(cancelledPax)} cancelled PAX, ~${formatNumber(divertedPax)} diverted PAX, ~${formatNumber(delayedPax)} delayed PAX.</p>
 
     <p><strong>Most severe rows:</strong></p>
@@ -509,7 +628,7 @@ function buildAirlineStatus() {
   return `
     <p><strong>Use these official airline pages alongside the board during disruption.</strong></p>
     <div class="linkListCompact">
-      ${AIRLINE_STATUS_LINKS.map(link => `<a class="statusLinkCardCompact" href="${link.url}" target="_blank" rel="noopener noreferrer"><span class="statusLinkNameCompact">${link.name}</span><span class="statusLinkNoteCompact">${link.note}</span></a>`).join("")}
+      ${AIRLINE_STATUS_LINKS.map((link) => `<a class="statusLinkCardCompact" href="${link.url}" target="_blank" rel="noopener noreferrer"><span class="statusLinkNameCompact">${link.name}</span><span class="statusLinkNoteCompact">${link.note}</span></a>`).join("")}
     </div>`;
 }
 
@@ -517,28 +636,6 @@ function setActiveTab(tabName) {
   state.activeTab = tabName;
   document.querySelectorAll(".tab").forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === tabName));
   document.querySelectorAll(".tabPanel").forEach((panel) => panel.classList.toggle("active", panel.id === `tab${tabName.charAt(0).toUpperCase()}${tabName.slice(1)}`));
-}
-
-function renderCacheWarning() {
-  const bar = document.getElementById("cacheWarningBar");
-  const text = document.getElementById("cacheWarningText");
-  if (!bar || !text) return;
-
-  if (!state.lastLoadedAt) {
-    bar.classList.add("hidden");
-    return;
-  }
-
-  const ageSeconds = Math.max(0, Math.floor((Date.now() - state.lastLoadedAt) / 1000));
-  const ageMinutes = Math.floor(ageSeconds / 60);
-
-  if (state.lastLoadFailed || ageSeconds >= WARNING_THRESHOLD_SECONDS) {
-    text.textContent = `Data is ${ageMinutes} minute${ageMinutes === 1 ? "" : "s"} old. Cache may be stale.`;
-    bar.classList.remove("hidden");
-    return;
-  }
-
-  bar.classList.add("hidden");
 }
 
 function refreshView() {
@@ -558,10 +655,10 @@ function refreshView() {
     airlineEl.value = "All";
   }
 
-  renderLoadFactorUi();
+  renderLoadFactorAndTimeUi();
   renderStaleStatus();
   renderCacheWarning();
-  document.getElementById("timezoneNote").textContent = getTimeZoneInfo().label;
+  renderCacheMeta();
 }
 
 function updateCacheUi() {
@@ -578,8 +675,10 @@ function updateCacheUi() {
   if (countdown) countdown.textContent = `${minutes}:${seconds}`;
   if (fill) fill.style.width = `${pct}%`;
   if (pauseBtn) pauseBtn.textContent = state.refreshPaused ? "▶" : "❚❚";
+
   renderStaleStatus();
   renderCacheWarning();
+  renderCacheMeta();
 }
 
 function startCacheTimer() {
@@ -592,9 +691,11 @@ function startCacheTimer() {
       return;
     }
 
-    state.cacheRemaining -= 1;
-    if (state.cacheRemaining <= 0) {
-      state.cacheRemaining = 0;
+    const ageSeconds = getDataAgeSeconds();
+    const remaining = Math.max(0, (state.cacheSeconds || DEFAULT_CACHE_SECONDS) - ageSeconds);
+    state.cacheRemaining = remaining;
+
+    if (remaining <= 0) {
       updateCacheUi();
       load(true);
       return;
@@ -616,8 +717,8 @@ async function load(isBackground = false) {
     const generatedAtMs = data.generatedAt ? new Date(data.generatedAt).getTime() : Date.now();
     const ageSeconds = Math.max(0, Math.floor((Date.now() - generatedAtMs) / 1000));
 
+    state.datasetGeneratedAtMs = generatedAtMs;
     state.cacheRemaining = Math.max(0, state.cacheSeconds - ageSeconds);
-    state.lastLoadedAt = generatedAtMs;
     state.lastLoadFailed = false;
 
     const allAirports = ["ALL", ...safeArray(data.filtersMeta?.airports || []).filter((x) => x !== "ALL")];
@@ -639,8 +740,8 @@ async function load(isBackground = false) {
     if (cacheInfo) cacheInfo.textContent = `Cache updated ${updated} PKT`;
 
     renderWarnings([
-      `Broader dataset cached for all three Pakistan airports. Filters now run locally in the browser.`,
-      `This countdown is tied to the shared server cache, not when you opened the tab.`,
+      `Broader dataset cached for all three Pakistan airports. Filters run locally in the browser and do not trigger new API pulls.`,
+      `This countdown and stale warning are tied to the shared server cache generation time, not when you opened the tab.`,
       state.includeMinor ? `Major and smaller carriers are visible in the current view.` : `Major carriers only in the current view.`
     ]);
 
@@ -653,6 +754,7 @@ async function load(isBackground = false) {
     renderWarnings([error.message || "Failed to load board data."]);
     renderStaleStatus();
     renderCacheWarning();
+    renderCacheMeta();
   }
 }
 
@@ -660,7 +762,20 @@ function exportRows() {
   if (!state.raw) return;
   const rows = applyFilters(baseClientFilteredRows());
   const headers = ["Flight", "Airline", "Origin", "Destination", "Departure", "Arrival", "Status", "Delay", "Aircraft", "Type", "Estimated PAX", "Diverted"];
-  const lines = rows.map((row) => [row.number || "", row.airline || "", row.origin || "", row.destination || "", displayTime(bestDepTime(row)), displayTime(bestArrTime(row)), row.status || "", delayText(row), row.aircraft || "", row.type || "", estimatePax(row), row.diverted ? "Yes" : ""]);
+  const lines = rows.map((row) => [
+    row.number || "",
+    row.airline || "",
+    row.origin || "",
+    row.destination || "",
+    displayTime(bestDepTime(row)),
+    displayTime(bestArrTime(row)),
+    row.status || "",
+    delayText(row),
+    row.aircraft || "",
+    row.type || "",
+    estimatePax(row),
+    row.diverted ? "Yes" : ""
+  ]);
   const csv = [headers, ...lines].map((line) => line.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
@@ -768,3 +883,4 @@ document.getElementById("crisisModal").addEventListener("click", (e) => { if (e.
 document.getElementById("airlineStatusModal").addEventListener("click", (e) => { if (e.target.id === "airlineStatusModal") closeAirlineStatus(); });
 
 load();
+

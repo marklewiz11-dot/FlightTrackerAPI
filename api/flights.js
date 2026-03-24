@@ -1,6 +1,7 @@
 export default async function handler(req, res) {
   const apiKey = "PASTE_YOUR_FLIGHTAWARE_KEY_HERE";
   const base = "https://aeroapi.flightaware.com/aeroapi";
+  const CACHE_SECONDS = 3600;
 
   const AIRPORTS = {
     OPIS: { code: "ISB", name: "Islamabad" },
@@ -59,7 +60,7 @@ export default async function handler(req, res) {
   ]);
 
   function setCacheHeaders() {
-    res.setHeader("Cache-Control", "public, s-maxage=1200, stale-while-revalidate=120");
+    res.setHeader("Cache-Control", `public, s-maxage=${CACHE_SECONDS}, stale-while-revalidate=60`);
   }
 
   function sendJson(statusCode, payload) {
@@ -270,7 +271,7 @@ export default async function handler(req, res) {
 
     return sendJson(200, {
       generatedAt: new Date().toISOString(),
-      cacheSeconds: 1200,
+      cacheSeconds: CACHE_SECONDS,
       filtersMeta: {
         airports: Object.values(AIRPORTS).map((a) => a.code),
         airlines: [...new Set(dedupedFlights.map((f) => f.airline).filter(Boolean))].sort(),
@@ -283,7 +284,7 @@ export default async function handler(req, res) {
   } catch (error) {
     return sendJson(500, {
       generatedAt: new Date().toISOString(),
-      cacheSeconds: 1200,
+      cacheSeconds: CACHE_SECONDS,
       filtersMeta: { airports: [], airlines: [], statuses: [], directions: [] },
       flights: [],
       warnings: [error.message || "Failed to load FlightAware data."]

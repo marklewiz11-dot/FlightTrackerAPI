@@ -1,5 +1,5 @@
 export default async function handler(req, res) {
-  const apiKey = "hn1UO6XF9P3DrZPwMPi5ABgWXEV3wrvF";
+  const apiKey = "PASTE_YOUR_FLIGHTAWARE_KEY_HERE";
   const base = "https://aeroapi.flightaware.com/aeroapi";
 
   const AIRPORTS = {
@@ -46,47 +46,16 @@ export default async function handler(req, res) {
   };
 
   const MAJOR_AIRLINE_PATTERNS = [
-    "pakistan international",
-    "pia",
-    "airblue",
-    "serene",
-    "airsial",
-    "air sial",
-    "fly jinnah",
-    "emirates",
-    "qatar",
-    "etihad",
-    "british airways",
-    "turkish",
-    "saudia",
-    "oman air",
-    "flydubai",
-    "thai",
-    "thai airways",
-    "air arabia",
-    "jazeera",
-    "jazeera airways",
-    "china airlines"
+    "pakistan international", "pia", "airblue", "serene", "airsial", "air sial", "fly jinnah",
+    "emirates", "qatar", "etihad", "british airways", "turkish", "saudia", "oman air",
+    "flydubai", "thai", "thai airways", "air arabia", "jazeera", "jazeera airways", "china airlines"
   ];
 
   const MAJOR_AIRLINE_CODES = new Set([
-    "PK", "PIA",
-    "PA", "ABQ",
-    "ER", "SEP",
-    "PF", "SIF",
-    "9P", "FJL",
-    "EK", "UAE",
-    "QR", "QTR",
-    "EY", "ETD",
-    "BA", "BAW",
-    "TK", "THY",
-    "SV", "SVA",
-    "WY", "OMA",
-    "FZ", "FDB",
-    "TG", "THA",
-    "G9", "ABY",
-    "J9", "JZR",
-    "CI", "CAL"
+    "PK", "PIA", "PA", "ABQ", "ER", "SEP", "PF", "SIF", "9P", "FJL",
+    "EK", "UAE", "QR", "QTR", "EY", "ETD", "BA", "BAW", "TK", "THY",
+    "SV", "SVA", "WY", "OMA", "FZ", "FDB", "TG", "THA", "G9", "ABY",
+    "J9", "JZR", "CI", "CAL"
   ]);
 
   function setCacheHeaders() {
@@ -99,27 +68,12 @@ export default async function handler(req, res) {
   }
 
   function headers() {
-    return {
-      "x-apikey": apiKey,
-      accept: "application/json"
-    };
+    return { "x-apikey": apiKey, accept: "application/json" };
   }
 
-  function flightNumber(f) {
-    return f.ident_iata || f.ident || "—";
-  }
-
-  function airportCode(value) {
-    if (!value) return "—";
-    if (typeof value === "string") return value;
-    return value.code_iata || value.code_icao || value.code || value.name || "—";
-  }
-
-  function toMillis(value) {
-    if (!value) return null;
-    const t = new Date(value).getTime();
-    return Number.isNaN(t) ? null : t;
-  }
+  function flightNumber(f) { return f.ident_iata || f.ident || "—"; }
+  function airportCode(value) { if (!value) return "—"; if (typeof value === "string") return value; return value.code_iata || value.code_icao || value.code || value.name || "—"; }
+  function toMillis(value) { if (!value) return null; const t = new Date(value).getTime(); return Number.isNaN(t) ? null : t; }
 
   function compareTimes(scheduled, estimateOrActual) {
     const s = toMillis(scheduled);
@@ -129,47 +83,26 @@ export default async function handler(req, res) {
   }
 
   function normaliseAirlineName(name) {
-    return String(name || "")
-      .toLowerCase()
-      .replace(/\b(airlines?|airways|international|corp|corporation|limited|ltd|company|co)\b/g, " ")
-      .replace(/[^a-z0-9]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+    return String(name || "").toLowerCase().replace(/\b(airlines?|airways|international|corp|corporation|limited|ltd|company|co)\b/g, " ").replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
   }
 
   function fullAirlineName(f) {
     if (f.operator) return f.operator;
-
     const iata = String(f.operator_iata || "").toUpperCase();
     const icao = String(f.operator_icao || "").toUpperCase();
     const identIataPrefix = String(f.ident_iata || "").replace(/[0-9].*$/, "").toUpperCase();
     const identPrefix = String(f.ident || "").replace(/[0-9].*$/, "").toUpperCase();
 
-    return (
-      airlineMap[iata] ||
-      airlineMap[icao] ||
-      airlineMap[identIataPrefix] ||
-      airlineMap[identPrefix] ||
-      iata ||
-      icao ||
-      identIataPrefix ||
-      identPrefix ||
-      "—"
-    );
+    return airlineMap[iata] || airlineMap[icao] || airlineMap[identIataPrefix] || airlineMap[identPrefix] || iata || icao || identIataPrefix || identPrefix || "—";
   }
 
   function isMajorAirline(flight, sourceFlight = null) {
     const rawName = String(flight.airline || "");
     const normalised = normaliseAirlineName(rawName);
-
-    if (MAJOR_AIRLINE_PATTERNS.some((p) => normalised.includes(p))) {
-      return true;
-    }
+    if (MAJOR_AIRLINE_PATTERNS.some((p) => normalised.includes(p))) return true;
 
     const numberPrefix = String(flight.number || "").replace(/[0-9].*$/, "").toUpperCase();
-    if (MAJOR_AIRLINE_CODES.has(numberPrefix)) {
-      return true;
-    }
+    if (MAJOR_AIRLINE_CODES.has(numberPrefix)) return true;
 
     const src = sourceFlight || {};
     const opIata = String(src.operator_iata || "").toUpperCase();
@@ -177,57 +110,21 @@ export default async function handler(req, res) {
     const identIata = String(src.ident_iata || "").replace(/[0-9].*$/, "").toUpperCase();
     const ident = String(src.ident || "").replace(/[0-9].*$/, "").toUpperCase();
 
-    if (
-      MAJOR_AIRLINE_CODES.has(opIata) ||
-      MAJOR_AIRLINE_CODES.has(opIcao) ||
-      MAJOR_AIRLINE_CODES.has(identIata) ||
-      MAJOR_AIRLINE_CODES.has(ident)
-    ) {
-      return true;
-    }
-
-    return false;
+    return MAJOR_AIRLINE_CODES.has(opIata) || MAJOR_AIRLINE_CODES.has(opIcao) || MAJOR_AIRLINE_CODES.has(identIata) || MAJOR_AIRLINE_CODES.has(ident);
   }
 
-  function getDepScheduled(f) {
-    return f.scheduled_off || f.scheduled_out || null;
-  }
-
-  function getDepEstimated(f) {
-    return f.estimated_off || f.estimated_out || null;
-  }
-
-  function getDepActual(f) {
-    return f.actual_off || f.actual_out || null;
-  }
-
-  function getArrScheduled(f) {
-    return f.scheduled_on || f.scheduled_in || null;
-  }
-
-  function getArrEstimated(f) {
-    return f.estimated_on || f.estimated_in || null;
-  }
-
-  function getArrActual(f) {
-    return f.actual_on || f.actual_in || null;
-  }
-
-  function bestDepTime(f) {
-    return getDepActual(f) || getDepEstimated(f) || getDepScheduled(f);
-  }
-
-  function bestArrTime(f) {
-    return getArrActual(f) || getArrEstimated(f) || getArrScheduled(f);
-  }
+  function getDepScheduled(f) { return f.scheduled_off || f.scheduled_out || null; }
+  function getDepEstimated(f) { return f.estimated_off || f.estimated_out || null; }
+  function getDepActual(f) { return f.actual_off || f.actual_out || null; }
+  function getArrScheduled(f) { return f.scheduled_on || f.scheduled_in || null; }
+  function getArrEstimated(f) { return f.estimated_on || f.estimated_in || null; }
+  function getArrActual(f) { return f.actual_on || f.actual_in || null; }
+  function bestDepTime(f) { return getDepActual(f) || getDepEstimated(f) || getDepScheduled(f); }
+  function bestArrTime(f) { return getArrActual(f) || getArrEstimated(f) || getArrScheduled(f); }
 
   function getDelayMinutes(f, direction) {
     const scheduled = direction === "Arrival" ? getArrScheduled(f) : getDepScheduled(f);
-    const relevant =
-      direction === "Arrival"
-        ? (getArrActual(f) || getArrEstimated(f))
-        : (getDepActual(f) || getDepEstimated(f));
-
+    const relevant = direction === "Arrival" ? (getArrActual(f) || getArrEstimated(f)) : (getDepActual(f) || getDepEstimated(f));
     const diff = compareTimes(scheduled, relevant);
     return diff && diff > 0 ? diff : 0;
   }
@@ -235,7 +132,6 @@ export default async function handler(req, res) {
   function deriveArrivalStatus(f) {
     const raw = String(f.status || "").toLowerCase();
     const arrDelay = compareTimes(getArrScheduled(f), getArrEstimated(f) || getArrActual(f));
-
     if (f.cancelled || raw.includes("cancel")) return "Cancelled";
     if (f.diverted) return "Diverted";
     if (getArrActual(f)) return "Arrived";
@@ -250,7 +146,6 @@ export default async function handler(req, res) {
   function deriveDepartureStatus(f) {
     const raw = String(f.status || "").toLowerCase();
     const depDelay = compareTimes(getDepScheduled(f), getDepEstimated(f) || getDepActual(f));
-
     if (f.cancelled || raw.includes("cancel")) return "Cancelled";
     if (f.diverted) return "Diverted";
     if (getDepActual(f) && !getArrActual(f)) return "In Air";
@@ -285,13 +180,7 @@ export default async function handler(req, res) {
       aircraft: f.aircraft_type || "—",
       type: f.type || "PAX",
       diverted: Boolean(f.diverted),
-      isMajor: isMajorAirline(
-        {
-          airline: fullAirlineName(f),
-          number: flightNumber(f)
-        },
-        f
-      )
+      isMajor: isMajorAirline({ airline: fullAirlineName(f), number: flightNumber(f) }, f)
     };
   }
 
@@ -318,29 +207,14 @@ export default async function handler(req, res) {
       aircraft: f.aircraft_type || "—",
       type: f.type || "PAX",
       diverted: Boolean(f.diverted),
-      isMajor: isMajorAirline(
-        {
-          airline: fullAirlineName(f),
-          number: flightNumber(f)
-        },
-        f
-      )
+      isMajor: isMajorAirline({ airline: fullAirlineName(f), number: flightNumber(f) }, f)
     };
   }
 
   function dedupe(list) {
     const seen = new Set();
-
     return list.filter((f) => {
-      const key = [
-        f.number,
-        f.direction,
-        f.airportCode,
-        f.scheduledDep || f.scheduledArr || "",
-        f.origin,
-        f.destination
-      ].join("|");
-
+      const key = [f.number, f.direction, f.airportCode, f.scheduledDep || f.scheduledArr || "", f.origin, f.destination].join("|");
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -349,25 +223,13 @@ export default async function handler(req, res) {
 
   function getBroadPakistanWindow() {
     const now = new Date();
-
-    const localParts = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Asia/Karachi",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit"
-    }).formatToParts(now);
-
+    const localParts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Karachi", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
     const y = localParts.find((p) => p.type === "year").value;
     const m = localParts.find((p) => p.type === "month").value;
     const d = localParts.find((p) => p.type === "day").value;
-
     const startDate = new Date(`${y}-${m}-${d}T00:00:00+05:00`);
     const endDate = new Date(startDate.getTime() + 2 * 24 * 60 * 60 * 1000);
-
-    return {
-      start: startDate.toISOString().replace(".000Z", "Z"),
-      end: endDate.toISOString().replace(".000Z", "Z")
-    };
+    return { start: startDate.toISOString().replace(".000Z", "Z"), end: endDate.toISOString().replace(".000Z", "Z") };
   }
 
   async function getJson(url) {
@@ -381,36 +243,17 @@ export default async function handler(req, res) {
 
   async function fetchWindowForAirports(airportIds, start, end, maxPages = 3) {
     const allFlights = [];
-
     for (const airportId of airportIds) {
       const airport = AIRPORTS[airportId];
+      const arrivalsUrl = `${base}/airports/${airportId}/flights/scheduled_arrivals?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=${maxPages}`;
+      const departuresUrl = `${base}/airports/${airportId}/flights/scheduled_departures?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=${maxPages}`;
 
-      const arrivalsUrl =
-        `${base}/airports/${airportId}/flights/scheduled_arrivals?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=${maxPages}`;
+      const [arrivalsRaw, departuresRaw] = await Promise.all([getJson(arrivalsUrl), getJson(departuresUrl)]);
 
-      const departuresUrl =
-        `${base}/airports/${airportId}/flights/scheduled_departures?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=${maxPages}`;
-
-      const [arrivalsRaw, departuresRaw] = await Promise.all([
-        getJson(arrivalsUrl),
-        getJson(departuresUrl)
-      ]);
-
-      const arrivals = dedupe(
-        Array.isArray(arrivalsRaw.scheduled_arrivals)
-          ? arrivalsRaw.scheduled_arrivals.map((f) => serialiseArrival(f, airport))
-          : []
-      );
-
-      const departures = dedupe(
-        Array.isArray(departuresRaw.scheduled_departures)
-          ? departuresRaw.scheduled_departures.map((f) => serialiseDeparture(f, airport))
-          : []
-      );
-
+      const arrivals = dedupe(Array.isArray(arrivalsRaw.scheduled_arrivals) ? arrivalsRaw.scheduled_arrivals.map((f) => serialiseArrival(f, airport)) : []);
+      const departures = dedupe(Array.isArray(departuresRaw.scheduled_departures) ? departuresRaw.scheduled_departures.map((f) => serialiseDeparture(f, airport)) : []);
       allFlights.push(...arrivals, ...departures);
     }
-
     return dedupe(allFlights);
   }
 
@@ -441,12 +284,7 @@ export default async function handler(req, res) {
     return sendJson(500, {
       generatedAt: new Date().toISOString(),
       cacheSeconds: 1200,
-      filtersMeta: {
-        airports: [],
-        airlines: [],
-        statuses: [],
-        directions: []
-      },
+      filtersMeta: { airports: [], airlines: [], statuses: [], directions: [] },
       flights: [],
       warnings: [error.message || "Failed to load FlightAware data."]
     });

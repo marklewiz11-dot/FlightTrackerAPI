@@ -72,18 +72,6 @@
             <button class="seg" data-day="tomorrow">Tomorrow</button>
             <button class="seg" data-day="all">All</button>
           </div>
-          <div class="uaeLoadFactorCard">
-            <div class="uaeLoadFactorTop">
-              <span class="uaeLoadFactorLabel">Load factor</span>
-              <strong class="uaeLoadFactorValue" id="loadFactorValue">85%</strong>
-            </div>
-            <input type="range" id="loadFactorSlider" min="50" max="100" step="1" value="85" />
-            <div class="uaeLoadFactorScale">
-              <span>50%</span>
-              <span>PAX estimate</span>
-              <span>100%</span>
-            </div>
-          </div>
         </div>
 
         <div class="filterGroup">
@@ -118,7 +106,6 @@
           </label>
         </div>
       </div>
-
     </section>
 
     <section class="tableCard">
@@ -127,7 +114,15 @@
           <button class="tab active" data-tab="flights">Flights <span id="flightCount">0</span></button>
           <button class="tab" data-tab="airlines">Airlines</button>
           <button class="tab" data-tab="airports">Airports</button>
+
+          <div class="toolbarLoadFactorInline">
+            <span class="toolbarLoadFactorLabel">Load factor:</span>
+            <strong class="toolbarLoadFactorNumber" id="loadFactorValue">85%</strong>
+            <input type="range" id="loadFactorSlider" min="50" max="100" step="1" value="85" />
+            <span class="toolbarLoadFactorHint">PAX estimate</span>
+          </div>
         </div>
+
         <div class="tableToolbarRight">
           <div class="toolbarNote" id="timezoneNote">Pakistan Standard Time</div>
         </div>

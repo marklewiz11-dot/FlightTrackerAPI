@@ -1,4 +1,5 @@
-const DEFAULT_CACHE_SECONDS = 1200;
+const DEFAULT_CACHE_SECONDS = 3600;
+const WARNING_THRESHOLD_SECONDS = 55 * 60;
 
 let state = {
   raw: null,
@@ -433,7 +434,7 @@ function buildInstructions() {
       <li>Pakistan board covers Islamabad, Lahore and Karachi.</li>
       <li>Default view is Islamabad. Use the airport filter to expand to Lahore, Karachi, or All airports.</li>
       <li>Manual refresh has been removed to reduce API cost.</li>
-      <li>The board refreshes every 20 minutes unless paused.</li>
+      <li>The board uses a shared 1 hour cache unless paused.</li>
       <li>The status pill shows Fresh, Stale, or Paused.</li>
       <li>The PKT and UK buttons set the time reference for all displayed flight times.</li>
       <li>The small time note above the table reflects the active time reference, either Pakistan Standard Time or United Kingdom time.</li>
@@ -442,13 +443,13 @@ function buildInstructions() {
       <li>The airline tab shows total, estimated passengers, on time, delayed and cancelled with coloured percentages and a simple performance bar.</li>
       <li>The airport tab shows total rows, cancelled rows, delayed over 60, and next movement for Pakistan airports and key hubs.</li>
       <li>The airline status modal links out to official airline pages for disruption cross checks.</li>
-      <li>The load factor slider now sits directly under Day in a compact UAE style control and defaults to 85%.</li>
+      <li>The load factor slider now sits inline beside Flights, Airlines and Airports in a compact UAE style control and defaults to 85%.</li>
       <li>Estimated PAX is shown both in the dedicated Flights table PAX column and inside each main flight row meta line, and recalculates locally when the load factor changes.</li>
     </ul>
 
     <p><strong>Cost saving design</strong></p>
     <ul>
-      <li>The backend fetches one broader window for all three airports on each refresh cycle.</li>
+      <li>The backend fetches one broader window for all three airports on each shared cache cycle.</li>
       <li>Day, airport, carrier set, direction, airline, status and load factor now work locally in the browser.</li>
       <li>This means filter changes do not trigger new FlightAware calls.</li>
       <li>Main fetch depth is capped at 3 pages per endpoint.</li>
@@ -513,6 +514,28 @@ function setActiveTab(tabName) {
   document.querySelectorAll(".tabPanel").forEach((panel) => panel.classList.toggle("active", panel.id === `tab${tabName.charAt(0).toUpperCase()}${tabName.slice(1)}`));
 }
 
+function renderCacheWarning() {
+  const bar = document.getElementById("cacheWarningBar");
+  const text = document.getElementById("cacheWarningText");
+  if (!bar || !text) return;
+
+  if (!state.lastLoadedAt) {
+    bar.classList.add("hidden");
+    return;
+  }
+
+  const ageSeconds = Math.max(0, Math.floor((Date.now() - state.lastLoadedAt) / 1000));
+  const ageMinutes = Math.floor(ageSeconds / 60);
+
+  if (state.lastLoadFailed || ageSeconds >= WARNING_THRESHOLD_SECONDS) {
+    text.textContent = `Data is ${ageMinutes} minute${ageMinutes === 1 ? "" : "s"} old. Cache may be stale.`;
+    bar.classList.remove("hidden");
+    return;
+  }
+
+  bar.classList.add("hidden");
+}
+
 function refreshView() {
   if (!state.raw) return;
   const rows = applyFilters(baseClientFilteredRows());
@@ -532,6 +555,7 @@ function refreshView() {
 
   renderLoadFactorUi();
   renderStaleStatus();
+  renderCacheWarning();
   document.getElementById("timezoneNote").textContent = getTimeZoneInfo().label;
 }
 
@@ -550,10 +574,10 @@ function updateCacheUi() {
   if (fill) fill.style.width = `${pct}%`;
   if (pauseBtn) pauseBtn.textContent = state.refreshPaused ? "▶" : "❚❚";
   renderStaleStatus();
+  renderCacheWarning();
 }
 
 function startCacheTimer() {
-  state.cacheRemaining = state.cacheSeconds || DEFAULT_CACHE_SECONDS;
   updateCacheUi();
   if (window.cacheTimer) clearInterval(window.cacheTimer);
 
@@ -562,6 +586,7 @@ function startCacheTimer() {
       updateCacheUi();
       return;
     }
+
     state.cacheRemaining -= 1;
     if (state.cacheRemaining <= 0) {
       state.cacheRemaining = 0;
@@ -569,6 +594,7 @@ function startCacheTimer() {
       load(true);
       return;
     }
+
     updateCacheUi();
   }, 1000);
 }
@@ -581,8 +607,12 @@ async function load(isBackground = false) {
 
     state.raw = data;
     state.cacheSeconds = Number(data.cacheSeconds || DEFAULT_CACHE_SECONDS);
-    state.cacheRemaining = state.cacheSeconds;
-    state.lastLoadedAt = Date.now();
+
+    const generatedAtMs = data.generatedAt ? new Date(data.generatedAt).getTime() : Date.now();
+    const ageSeconds = Math.max(0, Math.floor((Date.now() - generatedAtMs) / 1000));
+
+    state.cacheRemaining = Math.max(0, state.cacheSeconds - ageSeconds);
+    state.lastLoadedAt = generatedAtMs;
     state.lastLoadFailed = false;
 
     const allAirports = ["ALL", ...safeArray(data.filtersMeta?.airports || []).filter((x) => x !== "ALL")];
@@ -597,22 +627,27 @@ async function load(isBackground = false) {
     document.getElementById("statusFilter").value = state.status;
     document.getElementById("minorCarrierToggle").checked = state.includeMinor;
 
-    const updated = data.generatedAt ? new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Karachi", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(data.generatedAt)) : "—";
+    const updated = data.generatedAt
+      ? new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Karachi", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(data.generatedAt))
+      : "—";
     const cacheInfo = document.getElementById("cacheInfo");
     if (cacheInfo) cacheInfo.textContent = `Cache updated ${updated} PKT`;
 
     renderWarnings([
       `Broader dataset cached for all three Pakistan airports. Filters now run locally in the browser.`,
+      `This countdown is tied to the shared server cache, not when you opened the tab.`,
       state.includeMinor ? `Major and smaller carriers are visible in the current view.` : `Major carriers only in the current view.`
     ]);
 
     refreshView();
-    if (!isBackground) startCacheTimer();
+    if (!window.cacheTimer) startCacheTimer();
     else updateCacheUi();
+    if (!isBackground) updateCacheUi();
   } catch (error) {
     state.lastLoadFailed = true;
     renderWarnings([error.message || "Failed to load board data."]);
     renderStaleStatus();
+    renderCacheWarning();
   }
 }
 

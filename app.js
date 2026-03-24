@@ -119,18 +119,24 @@ function displayTime(value) { if (!value) return "—"; return zonedDateParts(va
 function delayText(row) { return row.delayMinutes ? `${row.delayMinutes}m` : "—"; }
 function displayStatus(row) { return row.status || "Unknown"; }
 
+function isCancelled(row) { return row.status === "Cancelled"; }
+function isDiverted(row) { return row.status === "Diverted" || row.diverted; }
+function isDelayed(row) { return !isCancelled(row) && !isDiverted(row) && Number(row.delayMinutes || 0) > 0; }
+function isDelayed60(row) { return !isCancelled(row) && !isDiverted(row) && Number(row.delayMinutes || 0) >= 60; }
+function isDisrupted(row) { return isCancelled(row) || isDiverted(row) || isDelayed60(row); }
+
 function disruptionPriority(row) {
-  if (row.status === "Cancelled") return 4;
-  if (row.status === "Diverted" || row.diverted) return 3;
-  if ((row.delayMinutes || 0) >= 120) return 2;
-  if ((row.delayMinutes || 0) >= 60) return 1;
+  if (isCancelled(row)) return 4;
+  if (isDiverted(row)) return 3;
+  if (Number(row.delayMinutes || 0) >= 120) return 2;
+  if (isDelayed60(row)) return 1;
   return 0;
 }
 
 function disruptionLabel(row) {
-  if (row.status === "Cancelled") return "Cancelled";
-  if (row.status === "Diverted" || row.diverted) return "Diverted";
-  if ((row.delayMinutes || 0) >= 60) return `Delayed ${row.delayMinutes}m`;
+  if (isCancelled(row)) return "Cancelled";
+  if (isDiverted(row)) return "Diverted";
+  if (isDelayed60(row)) return `Delayed ${row.delayMinutes}m`;
   return row.status || "Operational";
 }
 
@@ -169,23 +175,22 @@ function renderLoadFactorUi() {
 
 function renderKpis(summaryRows) {
   const total = summaryRows.length;
-  const cancelled = summaryRows.filter((f) => f.status === "Cancelled");
-  const diverted = summaryRows.filter((f) => f.status === "Diverted" || f.diverted);
-  const delayed60 = summaryRows.filter((f) => (f.delayMinutes || 0) >= 60);
-  const preDepDelays = summaryRows.filter((f) => f.direction === "Departure" && (f.delayMinutes || 0) > 0 && !f.actualDep);
+  const cancelled = summaryRows.filter(isCancelled);
+  const diverted = summaryRows.filter(isDiverted);
+  const delayed60 = summaryRows.filter(isDelayed60);
+  const disrupted = summaryRows.filter(isDisrupted);
+  const preDepDelays = summaryRows.filter((f) => f.direction === "Departure" && isDelayed(f) && !f.actualDep);
 
   const avgDelayMinutes = (() => {
-    const delayed = summaryRows.filter((f) => (f.delayMinutes || 0) > 0);
-    return delayed.length ? Math.round(delayed.reduce((sum, f) => sum + (f.delayMinutes || 0), 0) / delayed.length) : 0;
+    const delayed = summaryRows.filter(isDelayed);
+    return delayed.length ? Math.round(delayed.reduce((sum, f) => sum + Number(f.delayMinutes || 0), 0) / delayed.length) : 0;
   })();
 
   const cancelledPct = kpiPercent(cancelled.length, total);
   const cancelledPax = cancelled.reduce((sum, f) => sum + estimatePax(f), 0);
   const divertedPax = diverted.reduce((sum, f) => sum + estimatePax(f), 0);
   const delayedPax = delayed60.reduce((sum, f) => sum + estimatePax(f), 0);
-  const disruptedPax = [...summaryRows]
-    .filter((f) => f.status === "Cancelled" || f.status === "Diverted" || f.diverted || (f.delayMinutes || 0) >= 60)
-    .reduce((sum, f) => sum + estimatePax(f), 0);
+  const disruptedPax = disrupted.reduce((sum, f) => sum + estimatePax(f), 0);
 
   const el = document.getElementById("kpis");
   el.innerHTML = `
@@ -306,12 +311,12 @@ function renderAirlines(rows) {
     const item = map.get(key);
     item.total += 1;
     item.estPax += estimatePax(row);
-    if (row.status === "Cancelled") item.cancelled += 1;
-    else if (row.status === "Diverted" || row.diverted) item.diverted += 1;
-    else if ((row.delayMinutes || 0) > 0 || row.status === "Delayed") item.delayed += 1;
+    if (isCancelled(row)) item.cancelled += 1;
+    else if (isDiverted(row)) item.diverted += 1;
+    else if (isDelayed(row) || row.status === "Delayed") item.delayed += 1;
     else item.onTime += 1;
-    if ((row.delayMinutes || 0) > 0) {
-      item.delayTotal += row.delayMinutes;
+    if (isDelayed(row)) {
+      item.delayTotal += Number(row.delayMinutes || 0);
       item.delayCount += 1;
     }
   });
@@ -355,7 +360,7 @@ function renderAirportCards(rows) {
 
   const pakistanCards = ["ISB", "LHE", "KHI"].map((code) => {
     const subset = rows.filter((r) => r.airportCode === code);
-    return { code, name: PAKISTAN_AIRPORT_NAMES[code] || code, total: subset.length, cancelled: subset.filter((r) => r.status === "Cancelled").length, delayed: subset.filter((r) => (r.delayMinutes || 0) >= 60).length, nextMovement: getNextMovementText(subset) };
+    return { code, name: PAKISTAN_AIRPORT_NAMES[code] || code, total: subset.length, cancelled: subset.filter((r) => r.status === "Cancelled").length, delayed: subset.filter(isDelayed60).length, nextMovement: getNextMovementText(subset) };
   });
 
   const hubMap = new Map();
@@ -367,7 +372,7 @@ function renderAirportCards(rows) {
   });
 
   const hubCards = [...hubMap.entries()].map(([code, subset]) => ({
-    code, name: HUB_NAMES[code] || code, total: subset.length, cancelled: subset.filter((r) => r.status === "Cancelled").length, delayed: subset.filter((r) => (r.delayMinutes || 0) >= 60).length, nextMovement: getNextMovementText(subset)
+    code, name: HUB_NAMES[code] || code, total: subset.length, cancelled: subset.filter((r) => r.status === "Cancelled").length, delayed: subset.filter(isDelayed60).length, nextMovement: getNextMovementText(subset)
   })).sort((a, b) => (b.cancelled * 100 + b.delayed * 10 + b.total) - (a.cancelled * 100 + a.delayed * 10 + a.total)).slice(0, 12);
 
   pkEl.innerHTML = pakistanCards.map((card) => `
@@ -394,7 +399,7 @@ function renderAirportCards(rows) {
 
 function renderDisruptionFeed(rows) {
   const el = document.getElementById("disruptionFeed");
-  const disruptions = [...rows].filter((row) => disruptionPriority(row) > 0).sort((a, b) => {
+  const disruptions = [...rows].filter(isDisrupted).sort((a, b) => {
     const priority = disruptionPriority(b) - disruptionPriority(a);
     if (priority !== 0) return priority;
     return toMillis(bestDepTime(a) || bestArrTime(a)) - toMillis(bestDepTime(b) || bestArrTime(b));
@@ -465,9 +470,9 @@ function buildInstructions() {
 
 function buildCrisisReadout() {
   const rows = applyFilters(baseClientFilteredRows());
-  const cancelled = rows.filter((r) => r.status === "Cancelled");
-  const delayed = rows.filter((r) => (r.delayMinutes || 0) >= 60 || r.status === "Delayed");
-  const diverted = rows.filter((r) => r.status === "Diverted" || r.diverted);
+  const cancelled = rows.filter(isCancelled);
+  const delayed = rows.filter(isDelayed60);
+  const diverted = rows.filter(isDiverted);
 
   const severe = rows.filter((r) => disruptionPriority(r) > 0).sort((a, b) => {
     const p = disruptionPriority(b) - disruptionPriority(a);
@@ -601,7 +606,7 @@ function startCacheTimer() {
 
 async function load(isBackground = false) {
   try {
-    const res = await fetch("/api/flights", { cache: "no-store" });
+    const res = await fetch("/api/flights");
     const data = await res.json();
     if (!res.ok) throw new Error(data?.warnings?.[0] || "Failed to load board data.");
 

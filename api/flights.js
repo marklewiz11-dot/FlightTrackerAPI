@@ -2,6 +2,7 @@ export default async function handler(req, res) {
   const apiKey = "hn1UO6XF9P3DrZPwMPi5ABgWXEV3wrvF";
   const base = "https://aeroapi.flightaware.com/aeroapi";
   const CACHE_SECONDS = 3600;
+const BROWSER_CACHE_SECONDS = 0;
 
   const AIRPORTS = {
     OPIS: { code: "ISB", name: "Islamabad" },
@@ -60,11 +61,16 @@ export default async function handler(req, res) {
   ]);
 
   function setCacheHeaders() {
-    res.setHeader("Cache-Control", `public, s-maxage=${CACHE_SECONDS}, stale-while-revalidate=60`);
+    res.setHeader("Cache-Control", `public, max-age=${BROWSER_CACHE_SECONDS}, must-revalidate`);
+    res.setHeader("CDN-Cache-Control", `public, max-age=${CACHE_SECONDS}, stale-while-revalidate=60`);
+    res.setHeader("Vercel-CDN-Cache-Control", `public, max-age=${CACHE_SECONDS}, stale-while-revalidate=60`);
   }
 
   function sendJson(statusCode, payload) {
     setCacheHeaders();
+    if (payload && payload.generatedAt) {
+      res.setHeader("X-Data-Generated-At", payload.generatedAt);
+    }
     return res.status(statusCode).json(payload);
   }
 
@@ -259,6 +265,7 @@ export default async function handler(req, res) {
   }
 
   try {
+    const generatedAt = new Date().toISOString();
     const { start, end } = getBroadPakistanWindow();
     const airportIds = Object.keys(AIRPORTS);
     const dedupedFlights = await fetchWindowForAirports(airportIds, start, end, 3);
@@ -270,7 +277,7 @@ export default async function handler(req, res) {
     });
 
     return sendJson(200, {
-      generatedAt: new Date().toISOString(),
+      generatedAt,
       cacheSeconds: CACHE_SECONDS,
       filtersMeta: {
         airports: Object.values(AIRPORTS).map((a) => a.code),
@@ -282,8 +289,9 @@ export default async function handler(req, res) {
       warnings: []
     });
   } catch (error) {
+    const generatedAt = new Date().toISOString();
     return sendJson(500, {
-      generatedAt: new Date().toISOString(),
+      generatedAt,
       cacheSeconds: CACHE_SECONDS,
       filtersMeta: { airports: [], airlines: [], statuses: [], directions: [] },
       flights: [],

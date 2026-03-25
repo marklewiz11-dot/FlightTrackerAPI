@@ -1,5 +1,5 @@
 export default async function handler(req, res) {
-  const apiKey = "hn1UO6XF9P3DrZPwMPi5ABgWXEV3wrvF";
+  const apiKey = "PASTE_YOUR_FLIGHTAWARE_KEY_HERE";
   const base = "https://aeroapi.flightaware.com/aeroapi";
   const CACHE_SECONDS = 3600;
   const BROWSER_CACHE_SECONDS = 0;
@@ -100,7 +100,7 @@ export default async function handler(req, res) {
   function normaliseAirlineName(name) {
     return String(name || "")
       .toLowerCase()
-      .replace(/\b(airlines?|airways|international|corp|corporation|limited|ltd|company|co)\b/g, " ")
+      .replace(/(airlines?|airways|international|corp|corporation|limited|ltd|company|co)/g, " ")
       .replace(/[^a-z0-9]+/g, " ")
       .replace(/\s+/g, " ")
       .trim();
@@ -112,7 +112,6 @@ export default async function handler(req, res) {
     const icao = String(f.operator_icao || "").toUpperCase();
     const identIataPrefix = String(f.ident_iata || "").replace(/[0-9].*$/, "").toUpperCase();
     const identPrefix = String(f.ident || "").replace(/[0-9].*$/, "").toUpperCase();
-
     return airlineMap[iata] || airlineMap[icao] || airlineMap[identIataPrefix] || airlineMap[identPrefix] || iata || icao || identIataPrefix || identPrefix || "—";
   }
 
@@ -243,13 +242,7 @@ export default async function handler(req, res) {
 
   function getBroadPakistanWindow() {
     const now = new Date();
-    const localParts = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Asia/Karachi",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit"
-    }).formatToParts(now);
-
+    const localParts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Karachi", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
     const y = localParts.find((p) => p.type === "year").value;
     const m = localParts.find((p) => p.type === "month").value;
     const d = localParts.find((p) => p.type === "day").value;
@@ -270,18 +263,22 @@ export default async function handler(req, res) {
     return r.json();
   }
 
-  async function fetchWindowForAirports(airportIds, start, end, maxPages = 3) {
+  function resolveScope(scopeParam) {
+    const scope = String(scopeParam || "ISB").toUpperCase();
+    if (scope === "LHE") return { key: "LHE", airportIds: ["OPLA"], pageLimitMap: { OPLA: 1 }, label: "Lahore on demand" };
+    if (scope === "KHI") return { key: "KHI", airportIds: ["OPKC"], pageLimitMap: { OPKC: 1 }, label: "Karachi on demand" };
+    if (scope === "ALL") return { key: "ALL", airportIds: ["OPIS", "OPLA", "OPKC"], pageLimitMap: { OPIS: 3, OPLA: 1, OPKC: 1 }, label: "All airports with Lahore and Karachi on demand depth" };
+    return { key: "ISB", airportIds: ["OPIS"], pageLimitMap: { OPIS: 3 }, label: "Islamabad default" };
+  }
+
+  async function fetchWindowForAirports(airportIds, start, end, pageLimitMap) {
     const allFlights = [];
     for (const airportId of airportIds) {
       const airport = AIRPORTS[airportId];
+      const maxPages = pageLimitMap[airportId] || 1;
       const arrivalsUrl = `${base}/airports/${airportId}/flights/scheduled_arrivals?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=${maxPages}`;
       const departuresUrl = `${base}/airports/${airportId}/flights/scheduled_departures?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=${maxPages}`;
-
-      const [arrivalsRaw, departuresRaw] = await Promise.all([
-        getJson(arrivalsUrl),
-        getJson(departuresUrl)
-      ]);
-
+      const [arrivalsRaw, departuresRaw] = await Promise.all([getJson(arrivalsUrl), getJson(departuresUrl)]);
       const arrivals = dedupe(Array.isArray(arrivalsRaw.scheduled_arrivals) ? arrivalsRaw.scheduled_arrivals.map((f) => serialiseArrival(f, airport)) : []);
       const departures = dedupe(Array.isArray(departuresRaw.scheduled_departures) ? departuresRaw.scheduled_departures.map((f) => serialiseDeparture(f, airport)) : []);
       allFlights.push(...arrivals, ...departures);
@@ -291,9 +288,10 @@ export default async function handler(req, res) {
 
   try {
     const generatedAt = new Date().toISOString();
+    const requestedScope = req.query?.airport || req.query?.scope || "ISB";
+    const scope = resolveScope(requestedScope);
     const { start, end } = getBroadPakistanWindow();
-    const airportIds = Object.keys(AIRPORTS);
-    const dedupedFlights = await fetchWindowForAirports(airportIds, start, end, 3);
+    const dedupedFlights = await fetchWindowForAirports(scope.airportIds, start, end, scope.pageLimitMap);
 
     dedupedFlights.sort((a, b) => {
       const aTime = toMillis(a.bestDep || a.bestArr || a.scheduledDep || a.scheduledArr) || 0;
@@ -304,8 +302,10 @@ export default async function handler(req, res) {
     return sendJson(200, {
       generatedAt,
       cacheSeconds: CACHE_SECONDS,
+      scope: scope.key,
+      scopeLabel: scope.label,
       filtersMeta: {
-        airports: Object.values(AIRPORTS).map((a) => a.code),
+        airports: ["ISB", "LHE", "KHI", "ALL"],
         airlines: [...new Set(dedupedFlights.map((f) => f.airline).filter(Boolean))].sort(),
         statuses: ["On Time", "Delayed", "Cancelled", "In Air", "Departed", "Arrived", "Diverted", "Scheduled"],
         directions: ["Both", "Departure", "Arrival"]
@@ -318,7 +318,9 @@ export default async function handler(req, res) {
     return sendJson(500, {
       generatedAt,
       cacheSeconds: CACHE_SECONDS,
-      filtersMeta: { airports: [], airlines: [], statuses: [], directions: [] },
+      scope: "ISB",
+      scopeLabel: "Islamabad default",
+      filtersMeta: { airports: ["ISB", "LHE", "KHI", "ALL"], airlines: [], statuses: [], directions: [] },
       flights: [],
       warnings: [error.message || "Failed to load FlightAware data."]
     });

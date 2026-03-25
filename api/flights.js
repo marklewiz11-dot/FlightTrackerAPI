@@ -196,24 +196,40 @@ export default async function handler(req, res) {
     return aliasMap[simplified] || raw;
   }
 
+  function normaliseCode(code) {
+    return String(code || "").trim().toUpperCase();
+  }
+
+  function flightPrefix(value) {
+    return normaliseCode(String(value || "").replace(/[0-9].*$/, ""));
+  }
+
+  function airlineCodeForFlight(f) {
+    const candidates = [
+      normaliseCode(f.operator_iata),
+      normaliseCode(f.operator_icao),
+      flightPrefix(f.ident_iata),
+      flightPrefix(f.ident),
+      normaliseCode(f.operator)
+    ];
+
+    for (const code of candidates) {
+      if (!code) continue;
+      if (airlineMap[code]) return code;
+      if (/^[A-Z0-9]{2,3}$/.test(code)) return code;
+    }
+
+    return "—";
+  }
+
   function fullAirlineName(f) {
+    const code = airlineCodeForFlight(f);
+    if (code !== "—" && airlineMap[code]) return airlineMap[code];
+
     const operator = canonicalAirlineName(f.operator);
     if (operator !== "—") return operator;
 
-    const iata = String(f.operator_iata || "").toUpperCase();
-    const icao = String(f.operator_icao || "").toUpperCase();
-    const identIataPrefix = String(f.ident_iata || "").replace(/[0-9].*$/, "").toUpperCase();
-    const identPrefix = String(f.ident || "").replace(/[0-9].*$/, "").toUpperCase();
-
-    const mapped =
-      airlineMap[iata] ||
-      airlineMap[icao] ||
-      airlineMap[identIataPrefix] ||
-      airlineMap[identPrefix];
-
-    if (mapped) return mapped;
-
-    return canonicalAirlineName(iata || icao || identIataPrefix || identPrefix || "—");
+    return "—";
   }
 
   function isMajorAirline(flight, sourceFlight = null) {
@@ -290,6 +306,7 @@ export default async function handler(req, res) {
       direction: "Arrival",
       number: flightNumber(f),
       airline: fullAirlineName(f),
+      airlineCode: airlineCodeForFlight(f),
       origin: airportCode(f.origin),
       destination: airport.code,
       scheduledDep: getDepScheduled(f),
@@ -317,6 +334,7 @@ export default async function handler(req, res) {
       direction: "Departure",
       number: flightNumber(f),
       airline: fullAirlineName(f),
+      airlineCode: airlineCodeForFlight(f),
       origin: airport.code,
       destination: airportCode(f.destination),
       scheduledDep: getDepScheduled(f),

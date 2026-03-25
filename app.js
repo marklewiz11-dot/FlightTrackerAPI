@@ -241,7 +241,16 @@ function applyFilters(rows) {
 
 function renderWarnings(warnings) {
   const el = document.getElementById("warnings");
-  el.innerHTML = safeArray(warnings).map((w) => `<div class="notice">${w}</div>`).join("");
+  const items = safeArray(warnings).filter(Boolean);
+
+  if (!items.length) {
+    el.innerHTML = "";
+    el.style.display = "none";
+    return;
+  }
+
+  el.style.display = "block";
+  el.innerHTML = items.map((w) => `<div class="notice">${w}</div>`).join("");
 }
 
 function renderRows(rows) {
@@ -254,7 +263,7 @@ function renderRows(rows) {
   }
   tbody.innerHTML = rows.map((row) => {
     const pax = formatNumber(estimatePax(row));
-    const meta = `${row.aircraft || "—"} • ${row.type || "—"} • LF ${state.loadFactor}% • ~${pax} PAX`;
+    const meta = `${row.aircraft || "—"} • ${row.airline || "—"} • LF ${state.loadFactor}% • ~${pax} PAX`;
     return `
       <tr>
         <td class="flightCell"><div class="flightCellWrap"><span class="flightPrimary">${escapeHtml(row.number || "—")}</span><span class="flightMetaRow">${escapeHtml(meta)}</span></div></td>
@@ -579,17 +588,7 @@ async function load(isBackground = false) {
     const cacheInfo = document.getElementById("cacheInfo");
     if (cacheInfo) cacheInfo.textContent = `Cache updated ${updated} PKT`;
 
-    const scopeNotes = {
-      ISB: "Islamabad is the default scope and uses broader coverage.",
-      LHE: "Lahore is loaded on demand and uses one page to control cost.",
-      KHI: "Karachi is loaded on demand and uses one page to control cost.",
-      ALL: "ALL loads Islamabad plus one page each for Lahore and Karachi to control cost."
-    };
-    renderWarnings([
-      scopeNotes[state.airport] || "Airport scope loaded.",
-      `This countdown and warning banner are tied to the shared server cache generation time for the current scope, not when you opened the tab.`,
-      state.includeMinor ? `Major and smaller carriers are visible in the current view.` : `Major carriers only in the current view.`
-    ]);
+    renderWarnings([]);
 
     refreshView();
     if (!window.cacheTimer) startCacheTimer();

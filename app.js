@@ -263,7 +263,7 @@ function renderRows(rows) {
   }
   tbody.innerHTML = rows.map((row) => {
     const pax = formatNumber(estimatePax(row));
-    const meta = `${row.aircraft || "—"} • ${row.airline || "—"} • LF ${state.loadFactor}% • ~${pax} PAX`;
+    const meta = `${row.aircraft || "—"} • ${row.airlineCode || "—"} • LF ${state.loadFactor}% • ~${pax} PAX`;
     return `
       <tr>
         <td class="flightCell"><div class="flightCellWrap"><span class="flightPrimary">${escapeHtml(row.number || "—")}</span><span class="flightMetaRow">${escapeHtml(meta)}</span></div></td>

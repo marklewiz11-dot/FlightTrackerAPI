@@ -19,7 +19,7 @@
 
       <div class="topbarRight">
         <button class="topbarBtn topbarBtnWarning" id="instructionsBtn">Instructions</button>
-        <button class="topbarBtn topbarBtnDanger" id="crisisBtn">Crisis</button>
+        <button class="topbarBtn topbarBtnBrief" id="briefBtn">Brief</button>
         <button class="topbarBtn topbarBtnSuccess" id="airlineStatusBtn">Airline Status</button>
 
         <div class="cacheWrap compactTopCard">
@@ -32,7 +32,7 @@
           </div>
           <div class="cacheMetaRow">
             <span id="cacheAgeInfo">Data age 0m</span>
-            <span id="cacheCycleInfo">Shared 1h cache</span>
+            <span id="cacheCycleInfo">Shared 60m cache</span>
           </div>
         </div>
 
@@ -56,6 +56,7 @@
     </header>
 
     <div id="cacheWarningBar" class="cacheWarningBar hidden">
+      <div class="cacheWarningIcon">!</div>
       <div id="cacheWarningText" class="cacheWarningText"></div>
     </div>
 
@@ -205,13 +206,13 @@
     </div>
   </div>
 
-  <div class="modal hidden" id="crisisModal">
+  <div class="modal hidden" id="briefModal">
     <div class="modalCard">
       <div class="modalHead">
-        <div class="modalTitle">Crisis Readout</div>
-        <button class="closeBtn" id="closeCrisisBtn">Close</button>
+        <div class="modalTitle">Operational Brief</div>
+        <button class="closeBtn" id="closeBriefBtn">Close</button>
       </div>
-      <div class="briefingBody" id="crisisBody"></div>
+      <div class="briefingBody" id="briefBody"></div>
     </div>
   </div>
 

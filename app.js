@@ -101,7 +101,7 @@ function escapeHtml(value) { return String(value ?? "").replace(/&/g, "&amp;").r
 
 function statusClass(status) {
   const s = String(status || "").toLowerCase();
-  if (s.includes("cancel")) return "status-bad";
+  if (s.includes("cancel") || s.includes("divert")) return "status-bad";
   if (s.includes("delay")) return "status-warn";
   if (s.includes("arrived") || s.includes("departed") || s.includes("landed") || s.includes("on time")) return "status-good";
   return "status-neutral";

@@ -121,6 +121,7 @@
       <div class="tableToolbar">
         <div class="tableToolbarLeft">
           <button class="tab active" data-tab="flights">Flights <span id="flightCount">0</span></button>
+          <button class="tab" data-tab="earlyWarning">Early Warning</button>
           <button class="tab" data-tab="airlines">Airlines</button>
           <button class="tab" data-tab="airports">Airports</button>
 
@@ -159,6 +160,54 @@
             </thead>
             <tbody id="flightRows"></tbody>
           </table>
+        </div>
+      </div>
+
+      <div id="tabEarlyWarning" class="tabPanel">
+        <div class="warningSection">
+          <div class="airportSectionTitle">Early Warning Summary</div>
+          <div class="warningCards" id="earlyWarningCards"></div>
+        </div>
+        <div class="warningSection">
+          <div class="airportSectionTitle">Route Baseline Check</div>
+          <div class="tableWrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Hub</th>
+                  <th>Airline</th>
+                  <th>Published normal</th>
+                  <th>Current scheduled</th>
+                  <th>Usable now</th>
+                  <th>Est. usable PAX</th>
+                  <th>Signal</th>
+                </tr>
+              </thead>
+              <tbody id="earlyWarningRows"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="warningSection">
+          <div class="airportSectionTitle">Next Usable Outbound Options</div>
+          <div class="tableWrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Flight</th>
+                  <th>Airline</th>
+                  <th>Route</th>
+                  <th>Dep</th>
+                  <th>Status</th>
+                  <th>Est. PAX</th>
+                </tr>
+              </thead>
+              <tbody id="usableOutboundRows"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="warningSection">
+          <div class="airportSectionTitle">Snapshots</div>
+          <div class="snapshotPanel" id="snapshotMetaText"></div>
         </div>
       </div>
 

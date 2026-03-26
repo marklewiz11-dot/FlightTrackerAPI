@@ -1,5 +1,5 @@
 export default async function handler(req, res) {
-  const apiKey = "hn1UO6XF9P3DrZPwMPi5ABgWXEV3wrvF";
+  const apiKey = "PASTE_YOUR_FLIGHTAWARE_KEY_HERE";
   const base = "https://aeroapi.flightaware.com/aeroapi";
   const CACHE_SECONDS = 3600;
   const BROWSER_CACHE_SECONDS = 0;
@@ -390,11 +390,12 @@ export default async function handler(req, res) {
     const outbound = flights.filter((f) => f.direction === "Departure");
     const keyHub = outbound.filter((f) => KEY_HUBS.includes(String(f.destination || "").toUpperCase()));
     const usable = keyHub.filter((f) => f.status !== "Cancelled" && f.status !== "Diverted" && Number(f.delayMinutes || 0) < 60);
-    const routeSummary = [...new Set(keyHub.map((f) => `${f.destination}|${f.airline}`))].map((key) => {
-      const [hub, airline] = key.split("|");
-      const matching = keyHub.filter((f) => f.destination === hub && f.airline === airline);
-      const usableMatching = usable.filter((f) => f.destination === hub && f.airline === airline);
+    const routeSummary = [...new Set(keyHub.map((f) => `${f.origin || ""}|${f.destination}|${f.airline}`))].map((key) => {
+      const [origin, hub, airline] = key.split("|");
+      const matching = keyHub.filter((f) => (f.origin || "") === origin && f.destination === hub && f.airline === airline);
+      const usableMatching = usable.filter((f) => (f.origin || "") === origin && f.destination === hub && f.airline === airline);
       return {
+        origin,
         hub,
         airline,
         scheduled: matching.length,
@@ -405,6 +406,7 @@ export default async function handler(req, res) {
     const departureSlots = keyHub
       .filter((f) => f.scheduledDep || f.bestDep)
       .map((f) => ({
+        origin: f.origin,
         hub: f.destination,
         airline: f.airline,
         number: f.number,
@@ -465,7 +467,7 @@ export default async function handler(req, res) {
       const slots = Array.isArray(snapshot?.departureSlots) ? snapshot.departureSlots : [];
       for (const slot of slots) {
         if (!slot?.scheduledDep || !slot?.hub || !slot?.airline) continue;
-        const routeKey = `${slot.hub}|${slot.airline}`;
+        const routeKey = `${slot.origin || ""}|${slot.hub}|${slot.airline}`;
         const serviceDate = getPakistanDateKey(slot.scheduledDep);
         const weekday = getPakistanWeekdayKey(slot.scheduledDep);
         const dedupeKey = `${routeKey}|${serviceDate}`;

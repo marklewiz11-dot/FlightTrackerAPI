@@ -189,3 +189,22 @@ tbody tr:hover { background: var(--row); }
 .signalLow { background: rgba(30,203,107,0.1); color: #89eab2; border-color: rgba(30,203,107,0.18); }
 @media (max-width: 1200px) { .warningCards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 820px) { .warningCards { grid-template-columns: 1fr; } }
+
+
+.historyToolbar { display:flex; gap:8px; margin:8px 0 12px; }
+.historyChartWrap { margin-top:8px; }
+.historySvg { width:100%; height:auto; display:block; }
+.historySvg rect { fill:#0f1720; }
+.historyAxis, .historyGrid line { stroke:rgba(255,255,255,0.14); stroke-width:1; }
+.historyGrid text, .historyAxisLabel { fill:rgba(255,255,255,0.72); font-size:12px; }
+.historySeries polyline, .historySeries circle { stroke:currentColor; fill:currentColor; stroke-width:2; }
+.historySeries circle { stroke-width:0; }
+.historyLegend { display:flex; flex-wrap:wrap; gap:12px; margin-top:10px; font-size:12px; }
+.historyLegendItem { display:inline-flex; align-items:center; gap:6px; }
+.historyLegendLine { display:inline-block; width:18px; height:0; border-top:2px solid currentColor; }
+.historySeries.series0, .historyLegendLine.series0 { color:#93c5fd; }
+.historySeries.series1, .historyLegendLine.series1 { color:#fca5a5; }
+.historySeries.series2, .historyLegendLine.series2 { color:#86efac; }
+.historySeries.series3, .historyLegendLine.series3 { color:#fcd34d; }
+.historySeries.series4, .historyLegendLine.series4 { color:#c4b5fd; }
+.historySeries.series5, .historyLegendLine.series5 { color:#67e8f9; }

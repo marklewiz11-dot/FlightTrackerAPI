@@ -20,7 +20,8 @@ let state = {
   lastLoadFailed: false,
   loadFactor: 85,
   scopeLabel: "Islamabad default",
-  snapshotMeta: { enabled: false, saved: false, note: "Snapshot saving not configured.", recentCount: null }
+  snapshotMeta: { enabled: false, saved: false, note: "Snapshot saving not configured.", recentCount: null },
+  historyChartGranularity: "day"
 };
 
 const AIRLINE_STATUS_LINKS = [
@@ -346,29 +347,45 @@ function getBaselineEntriesForScope() {
   return PUBLISHED_SCHEDULE_BASELINE[state.airport] || PUBLISHED_SCHEDULE_BASELINE.ISB;
 }
 
+function getBaselineRouteKey(entry) {
+  return `${String(entry.origin || state.airport).toUpperCase()}|${String(entry.hub || '').toUpperCase()}|${String(entry.airline || '').toLowerCase()}`;
+}
+
+function getTrackedBaselineRouteKeys() {
+  return new Set(getBaselineEntriesForScope().map(getBaselineRouteKey));
+}
+
+function isTrackedBaselineRow(row) {
+  const key = `${String(row.origin || state.airport).toUpperCase()}|${String(row.destination || '').toUpperCase()}|${String(row.airline || '').toLowerCase()}`;
+  return getTrackedBaselineRouteKeys().has(key);
+}
+
+function getTrackedEarlyWarningRows() {
+  return getEarlyWarningRows().filter((row) => row.direction === "Departure" && isTrackedBaselineRow(row));
+}
+
 function getCoverageSummary(filteredOutboundRows) {
   const coverage = state.raw?.coverageMeta?.departures;
   const shownCount = filteredOutboundRows.length;
   if (!coverage) {
-    return { label: "Unknown", cls: "signalMedium", detail: `${shownCount} departure row${shownCount === 1 ? "" : "s"} shown in the selected window.` };
+    return { label: "Unknown", cls: "signalMedium", detail: `${shownCount} tracked departure row${shownCount === 1 ? "" : "s"} shown in the selected window.` };
   }
   if (coverage.truncatedPossible) {
     return {
       label: "Check coverage",
       cls: "signalHigh",
-      detail: `${shownCount} departure row${shownCount === 1 ? "" : "s"} shown in the selected window. The source pull signalled extra departure pages beyond the configured page cap, so scheduled counts may be understated.`
+      detail: `${shownCount} tracked departure row${shownCount === 1 ? "" : "s"} shown in the selected window. The source pull signalled extra departure pages beyond the configured page cap, so scheduled counts may be understated.`
     };
   }
   return {
     label: "Good",
     cls: "signalLow",
-    detail: `${shownCount} departure row${shownCount === 1 ? "" : "s"} shown in the selected window. No extra departure page was signalled by the source pull.`
+    detail: `${shownCount} tracked departure row${shownCount === 1 ? "" : "s"} shown in the selected window. No extra departure page was signalled by the source pull.`
   };
 }
 
 function getBaselineComparison() {
-  const rows = getEarlyWarningRows();
-  const outbound = rows.filter((r) => r.direction === "Departure");
+  const outbound = getTrackedEarlyWarningRows();
   const entries = getBaselineEntriesForScope();
 
   const routeLines = entries.map((entry) => {
@@ -429,7 +446,7 @@ function getBaselineComparison() {
 function getUpcomingUsableOutbound(hoursAhead = 24) {
   const nowMs = Date.now();
   const horizonMs = nowMs + hoursAhead * 60 * 60 * 1000;
-  return getEarlyWarningRows()
+  return getTrackedEarlyWarningRows()
     .filter((row) => isUsableDeparture(row))
     .filter((row) => {
       const dep = toMillis(bestDepTime(row) || row.scheduledDep);
@@ -454,7 +471,7 @@ function getEarlyWarningModel() {
   }
   const usablePax12 = upcoming12.reduce((sum, row) => sum + estimatePax(row), 0);
   const usablePax24 = upcoming24.reduce((sum, row) => sum + estimatePax(row), 0);
-  const coverage = getCoverageSummary(getEarlyWarningRows().filter((row) => row.direction === "Departure"));
+  const coverage = getCoverageSummary(getTrackedEarlyWarningRows());
   return { baseline, upcoming12, upcoming24, ratio, severity, signal, usablePax12, usablePax24, coverage };
 }
 
@@ -606,6 +623,74 @@ function renderAirportCards(rows) {
   hubEl.innerHTML = hubCards.map((card) => `<div class="airportCard ${card.cancelled > 0 ? "airportCardAlert" : ""}"><div class="airportCodeRow"><div class="airportCode">${card.code}</div>${card.cancelled > 0 ? `<div class="airportAlertDot">• ${card.cancelled}</div>` : ""}</div><div class="airportName">${card.name}</div><div class="airportStatsLine"><span>Total <strong>${card.total}</strong></span><span class="badText">Canx <strong>${card.cancelled}</strong></span><span class="warnText">Delay >60 <strong>${card.delayed}</strong></span></div><div class="airportNext">Next: ${card.nextMovement}</div></div>`).join("");
 }
 
+function getHistorySeriesForChart(granularity = state.historyChartGranularity || "day") {
+  const timeline = state.raw?.historyMeta?.timelineMeta || {};
+  const series = granularity === "week" ? safeArray(timeline.airlineWeekly || []) : safeArray(timeline.airlineDaily || []);
+  const trackedAirlines = new Set(getBaselineEntriesForScope().map((entry) => `${String(entry.origin || state.airport).toUpperCase()}|${String(entry.airline || '').toLowerCase()}`));
+  const filtered = series.filter((item) => {
+    const origin = String(item.origin || '').toUpperCase();
+    if (state.airport !== "ALL" && origin !== state.airport) return false;
+    const key = `${origin}|${String(item.airline || '').toLowerCase()}`;
+    return trackedAirlines.has(key);
+  });
+  const labelKey = granularity === "week" ? "weekStart" : "serviceDate";
+  const labels = [...new Set(filtered.map((item) => item[labelKey]).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const grouped = new Map();
+  for (const item of filtered) {
+    const name = state.airport === "ALL" ? `${item.origin} ${item.airline}` : item.airline;
+    if (!grouped.has(name)) grouped.set(name, { name, points: new Map(), total: 0 });
+    grouped.get(name).points.set(item[labelKey], Number(item.scheduled || 0));
+    grouped.get(name).total += Number(item.scheduled || 0);
+  }
+  const datasets = [...grouped.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name)).slice(0, 8).map((group) => ({
+    name: group.name,
+    values: labels.map((label) => Number(group.points.get(label) || 0))
+  }));
+  return { labels, datasets, granularity };
+}
+
+function formatHistoryChartLabel(label, granularity) {
+  if (!label) return "";
+  if (granularity === "week") return `Week of ${label}`;
+  return label;
+}
+
+function renderHistoryChart() {
+  const wrap = document.getElementById("historyChart");
+  const meta = document.getElementById("historyChartMeta");
+  if (!wrap || !meta) return;
+  const chart = getHistorySeriesForChart();
+  if (!chart.labels.length || !chart.datasets.length) {
+    wrap.innerHTML = `<div class="emptyBlock">History chart will appear once enough snapshots have been saved for the selected scope.</div>`;
+    meta.textContent = state.raw?.historyMeta?.note || "History is still building.";
+    return;
+  }
+  const width = 900;
+  const height = 280;
+  const padLeft = 44;
+  const padRight = 20;
+  const padTop = 16;
+  const padBottom = 34;
+  const plotWidth = width - padLeft - padRight;
+  const plotHeight = height - padTop - padBottom;
+  const maxValue = Math.max(1, ...chart.datasets.flatMap((set) => set.values));
+  const xForIndex = (idx) => chart.labels.length === 1 ? padLeft + plotWidth / 2 : padLeft + (idx * plotWidth / (chart.labels.length - 1));
+  const yForValue = (val) => padTop + plotHeight - (val / maxValue) * plotHeight;
+  const gridValues = [...new Set([0, Math.ceil(maxValue / 2), maxValue])].sort((a, b) => a - b);
+  const seriesMarkup = chart.datasets.map((set, idx) => {
+    const pts = set.values.map((val, i) => `${xForIndex(i)},${yForValue(val)}`).join(' ');
+    const dash = idx % 2 === 1 ? '6 4' : '0';
+    const pointDots = set.values.map((val, i) => `<circle cx="${xForIndex(i)}" cy="${yForValue(val)}" r="3"></circle>`).join('');
+    return `<g class="historySeries series${idx % 6}"><polyline points="${pts}" fill="none" stroke-dasharray="${dash}"></polyline>${pointDots}</g>`;
+  }).join('');
+  const gridMarkup = gridValues.map((val) => `<g class="historyGrid"><line x1="${padLeft}" y1="${yForValue(val)}" x2="${width - padRight}" y2="${yForValue(val)}"></line><text x="${padLeft - 8}" y="${yForValue(val) + 4}" text-anchor="end">${val}</text></g>`).join('');
+  const xLabels = chart.labels.map((label, idx) => `<text class="historyAxisLabel" x="${xForIndex(idx)}" y="${height - 10}" text-anchor="middle">${escapeHtml(label.slice(5))}</text>`).join('');
+  const legend = chart.datasets.map((set, idx) => `<span class="historyLegendItem"><span class="historyLegendLine series${idx % 6}"></span>${escapeHtml(set.name)}</span>`).join('');
+  wrap.innerHTML = `<svg viewBox="0 0 ${width} ${height}" class="historySvg" role="img" aria-label="Tracked airline history chart"><rect x="0" y="0" width="${width}" height="${height}" rx="10" ry="10"></rect>${gridMarkup}<line class="historyAxis" x1="${padLeft}" y1="${padTop}" x2="${padLeft}" y2="${padTop + plotHeight}"></line><line class="historyAxis" x1="${padLeft}" y1="${padTop + plotHeight}" x2="${width - padRight}" y2="${padTop + plotHeight}"></line>${seriesMarkup}${xLabels}</svg><div class="historyLegend">${legend}</div>`;
+  const scopeText = state.airport === "ALL" ? "all airports" : (PAKISTAN_AIRPORT_NAMES[state.airport] || state.airport);
+  meta.textContent = `Tracked airline scheduled departures by ${chart.granularity === "week" ? "week" : "service day"} for ${scopeText}. ${state.raw?.historyMeta?.note || ""}`.trim();
+}
+
 function renderDisruptionFeed(rows) {
   const el = document.getElementById("disruptionFeed");
   const disruptions = [...rows].filter(isDisrupted).sort((a, b) => {
@@ -629,11 +714,15 @@ function renderEarlyWarning() {
   const rowsEl = document.getElementById("earlyWarningRows");
   const outboundEl = document.getElementById("usableOutboundRows");
   const snapshotEl = document.getElementById("snapshotMetaText");
+  const dayBtn = document.getElementById("historyDayBtn");
+  const weekBtn = document.getElementById("historyWeekBtn");
   const model = getEarlyWarningModel();
+  if (dayBtn) dayBtn.classList.toggle("active", state.historyChartGranularity !== "week");
+  if (weekBtn) weekBtn.classList.toggle("active", state.historyChartGranularity === "week");
   const severityClass = model.severity === "high" ? "warningRiskHigh" : (model.severity === "medium" ? "warningRiskMedium" : "warningRiskLow");
   cardsEl.innerHTML = `
     <div class="warningCard ${severityClass}"><div class="warningCardLabel">Overall signal</div><div class="warningCardValue">${model.signal}</div><div class="warningCardSub">Based on current usable hub departures versus the normal expected level for the selected scope and day window.</div></div>
-    <div class="warningCard"><div class="warningCardLabel">Usable departures next 12h</div><div class="warningCardValue">${model.upcoming12.length}</div><div class="warningCardSub">Operational departures to key hubs that are not cancelled, diverted, or delayed more than 60 minutes.</div></div>
+    <div class="warningCard"><div class="warningCardLabel">Usable tracked departures next 12h</div><div class="warningCardValue">${model.upcoming12.length}</div><div class="warningCardSub">Tracked baseline departures only. These are the same airlines and routes used in the normal expected comparison.</div></div>
     <div class="warningCard"><div class="warningCardLabel">Est. usable PAX next 12h</div><div class="warningCardValue">${formatNumber(model.usablePax12)}</div><div class="warningCardSub">Estimated onward passenger carrying capacity using the selected load factor.</div></div>
     <div class="warningCard"><div class="warningCardLabel">Normal expected in window</div><div class="warningCardValue">${model.baseline.expectedTotal.toFixed(1)}</div><div class="warningCardSub">Uses route specific day slots when loaded, otherwise rolling history if enough snapshots exist, otherwise a weekly fallback.</div></div>
     <div class="warningCard"><div class="warningCardLabel">Coverage</div><div class="warningCardValue">${model.coverage.label}</div><div class="warningCardSub">${escapeHtml(model.coverage.detail)}</div></div>
@@ -674,6 +763,7 @@ function renderEarlyWarning() {
 
   const historyNote = state.raw?.historyMeta?.note ? `<br><span class="tableSubMeta">${escapeHtml(state.raw.historyMeta.note)}</span>` : "";
   snapshotEl.innerHTML = `${escapeHtml(state.snapshotMeta.note || "Snapshot saving has not been configured yet.")}${state.snapshotMeta.pathname ? `<br><span class="tableSubMeta">Latest snapshot: ${escapeHtml(state.snapshotMeta.pathname)}</span>` : ""}${historyNote}`;
+  renderHistoryChart();
 }
 
 function renderStaleStatus() {

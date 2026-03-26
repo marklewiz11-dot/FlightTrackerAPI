@@ -70,29 +70,75 @@ const AIRCRAFT_CAPACITY = {
   "739": 215, "772": 314, "77W": 396, "788": 248, "789": 290
 };
 
-const EXTERNAL_GULF_BASELINE = {
+const WEEKDAY_ORDER = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function slotsAll(times) {
+  return WEEKDAY_ORDER.reduce((acc, day) => {
+    acc[day] = [...times];
+    return acc;
+  }, {});
+}
+
+const PUBLISHED_SCHEDULE_BASELINE = {
   ISB: [
-    { hub: "DOH", airline: "Qatar Airways", weekly: 14 },
-    { hub: "DXB", airline: "Emirates", weekly: 10 },
-    { hub: "DXB", airline: "flydubai", weekly: 7 },
-    { hub: "AUH", airline: "Etihad Airways", weekly: 14 }
+    { hub: "DOH", airline: "Qatar Airways", weeklyFallback: 14, slotsByWeekday: slotsAll(["03:30", "09:25"]) },
+    { hub: "DXB", airline: "Emirates", weeklyFallback: 10, slotsByWeekday: slotsAll(["03:15", "09:25"]) },
+    { hub: "DXB", airline: "flydubai", weeklyFallback: 7, slotsByWeekday: slotsAll(["06:05"]) },
+    { hub: "AUH", airline: "Etihad Airways", weeklyFallback: 14, slotsByWeekday: {
+      Sun: ["04:50", "19:45"], Mon: ["04:30", "19:25"], Tue: ["04:30", "19:25"], Wed: ["04:30", "19:25"],
+      Thu: ["04:30", "19:25"], Fri: ["04:30", "19:25"], Sat: ["04:30", "19:25"]
+    } },
+    { hub: "IST", airline: "Turkish Airlines", weeklyFallback: 14, slotsByWeekday: slotsAll(["06:15", "10:20"]) },
+    { hub: "LGW", airline: "British Airways", weeklyFallback: 3, slotsByWeekday: {
+      Sun: [], Mon: ["00:35"], Tue: [], Wed: ["00:35"], Thu: [], Fri: [], Sat: ["00:35"]
+    } },
+    { hub: "BKK", airline: "Thai Airways", weeklyFallback: 4, slotsByWeekday: {
+      Sun: [], Mon: ["23:20"], Tue: [], Wed: ["23:20"], Thu: [], Fri: ["23:20"], Sat: ["23:20"]
+    } },
+    { hub: "MCT", airline: "AirSial", weeklyFallback: 3, slotsByWeekday: {
+      Sun: [], Mon: ["10:50"], Tue: [], Wed: ["10:50"], Thu: [], Fri: [], Sat: ["10:50"]
+    } }
   ],
   LHE: [
-    { hub: "DOH", airline: "Qatar Airways", weekly: 14 },
-    { hub: "DXB", airline: "Emirates", weekly: 10 },
-    { hub: "DXB", airline: "flydubai", weekly: 7 },
-    { hub: "AUH", airline: "Etihad Airways", weekly: 14 }
+    { hub: "DOH", airline: "Qatar Airways", weeklyFallback: 13, slotsByWeekday: {
+      Sun: ["02:55", "09:55"], Mon: ["02:55", "08:50"], Tue: ["02:55", "08:50"], Wed: ["02:55", "08:50"],
+      Thu: ["02:55", "08:50"], Fri: ["02:55", "08:50"], Sat: ["02:55", "08:50"]
+    } },
+    { hub: "DXB", airline: "Emirates", weeklyFallback: 14, slotsByWeekday: slotsAll(["03:25", "09:10"]) },
+    { hub: "DXB", airline: "flydubai", weeklyFallback: 7, slotsByWeekday: slotsAll(["09:25"]) },
+    { hub: "AUH", airline: "Etihad Airways", weeklyFallback: 11, slotsByWeekday: {
+      Sun: ["04:40"], Mon: ["04:40", "19:45"], Tue: ["04:40", "19:45"], Wed: ["04:40", "19:45"],
+      Thu: ["19:45"], Fri: ["04:40", "19:45"], Sat: ["19:45"]
+    } },
+    { hub: "IST", airline: "Turkish Airlines", weeklyFallback: 14, slotsByWeekday: slotsAll(["05:35", "09:35"]) },
+    { hub: "BKK", airline: "Thai Airways", weeklyFallback: 6, slotsByWeekday: {
+      Sun: ["23:40"], Mon: ["23:45"], Tue: ["23:45"], Wed: [], Thu: ["23:45"], Fri: ["23:45"], Sat: ["23:45"]
+    } },
+    { hub: "KWI", airline: "Kuwait Airways", weeklyFallback: 3, slotsByWeekday: {
+      Sun: [], Mon: [], Tue: ["05:10"], Wed: [], Thu: ["05:10"], Fri: [], Sat: ["03:35"]
+    } }
   ],
   KHI: [
-    { hub: "DOH", airline: "Qatar Airways", weekly: 14 },
-    { hub: "DXB", airline: "Emirates", weekly: 20 },
-    { hub: "AUH", airline: "Etihad Airways", weekly: 14 }
+    { hub: "DOH", airline: "Qatar Airways", weeklyFallback: 14, slotsByWeekday: slotsAll(["03:50", "10:15"]) },
+    { hub: "DXB", airline: "Emirates", weeklyFallback: 21, slotsByWeekday: slotsAll(["03:00", "12:15", "22:40"]) },
+    { hub: "DXB", airline: "flydubai", weeklyFallback: 28, slotsByWeekday: slotsAll(["03:30", "10:00", "16:40", "23:55"]) },
+    { hub: "AUH", airline: "Etihad Airways", weeklyFallback: 28, slotsByWeekday: slotsAll(["05:25", "06:35", "12:05", "21:35"]) },
+    { hub: "IST", airline: "Turkish Airlines", weeklyFallback: 11, slotsByWeekday: {
+      Sun: ["05:50", "09:05"], Mon: ["05:50"], Tue: ["05:30"], Wed: ["05:30", "09:05"],
+      Thu: ["05:50"], Fri: ["05:50", "09:05"], Sat: ["05:50"]
+    } },
+    { hub: "BKK", airline: "Thai Airways", weeklyFallback: 5, slotsByWeekday: {
+      Sun: ["23:30"], Mon: [], Tue: ["23:30"], Wed: [], Thu: ["23:30"], Fri: ["23:30"], Sat: ["23:30"]
+    } },
+    { hub: "KWI", airline: "Jazeera Airways", weeklyFallback: 2, slotsByWeekday: {
+      Sun: [], Mon: [], Tue: ["03:20"], Wed: [], Thu: [], Fri: ["03:20"], Sat: []
+    } }
   ]
 };
-EXTERNAL_GULF_BASELINE.ALL = [
-  ...EXTERNAL_GULF_BASELINE.ISB,
-  ...EXTERNAL_GULF_BASELINE.LHE,
-  ...EXTERNAL_GULF_BASELINE.KHI
+PUBLISHED_SCHEDULE_BASELINE.ALL = [
+  ...PUBLISHED_SCHEDULE_BASELINE.ISB,
+  ...PUBLISHED_SCHEDULE_BASELINE.LHE,
+  ...PUBLISHED_SCHEDULE_BASELINE.KHI
 ];
 
 function getTimeZoneInfo() {
@@ -115,6 +161,82 @@ function getAgeSeverity() {
 
 function getSelectedWindowDays() {
   return state.day === "all" ? 2 : 1;
+}
+
+function getPakistanNow() {
+  return new Date(new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Karachi",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  }).format(new Date()).replace(/(\d{2})\/(\d{2})\/(\d{4}),\s*/, "$3-$1-$2T") + "+05:00");
+}
+
+function getSelectedPakistanDates() {
+  const now = getPakistanNow();
+  const today = new Date(now.getTime());
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  if (state.day === "today") return [today];
+  if (state.day === "tomorrow") return [tomorrow];
+  return [today, tomorrow];
+}
+
+function getWeekdayKeyForDate(date) {
+  return new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Karachi", weekday: "short" }).format(date);
+}
+
+function getWeekdayKeyForIso(value) {
+  if (!value) return null;
+  return new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Karachi", weekday: "short" }).format(new Date(value));
+}
+
+function getPakistanDateKey(value) {
+  if (!value) return null;
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Karachi", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
+}
+
+function getPakistanTimeKey(value) {
+  if (!value) return null;
+  return new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Karachi", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
+}
+
+function formatSlotTimes(slots) {
+  const unique = [...new Set((slots || []).filter(Boolean))].sort();
+  if (!unique.length) return "—";
+  return unique.join(", ");
+}
+
+function getPublishedWindowSlots(entry) {
+  const slotsByWeekday = entry?.slotsByWeekday || {};
+  return getSelectedPakistanDates().flatMap((date) => slotsByWeekday[getWeekdayKeyForDate(date)] || []);
+}
+
+function getRollingBaselineForEntry(entry) {
+  const history = state.raw?.historyMeta?.rollingByRouteWeekday || {};
+  const routeKey = `${entry.hub}|${entry.airline}`;
+  const routeHistory = history[routeKey] || {};
+  const selectedDates = getSelectedPakistanDates();
+  const dayModels = selectedDates
+    .map((date) => routeHistory[getWeekdayKeyForDate(date)] || null)
+    .filter(Boolean);
+
+  if (!dayModels.length) {
+    return { expectedCount: null, usableCount: null, slots: [], sampleCount: 0 };
+  }
+
+  const expectedCount = dayModels.reduce((sum, item) => sum + Number(item.expectedScheduledAvg || 0), 0);
+  const usableCount = dayModels.reduce((sum, item) => sum + Number(item.expectedUsableAvg || 0), 0);
+  const sampleCount = Math.min(...dayModels.map((item) => Number(item.sampleCount || 0)));
+  const slots = dayModels.flatMap((item) => item.normalSlots || []);
+  return { expectedCount, usableCount, slots, sampleCount };
+}
+
+function getWeeklyFallbackExpected(entry) {
+  return (Number(entry?.weeklyFallback || 0) / 7) * getSelectedWindowDays();
 }
 
 function zonedDateParts(value) {
@@ -246,32 +368,76 @@ function getEarlyWarningRows() {
 }
 
 function getBaselineEntriesForScope() {
-  return EXTERNAL_GULF_BASELINE[state.airport] || EXTERNAL_GULF_BASELINE.ISB;
+  return PUBLISHED_SCHEDULE_BASELINE[state.airport] || PUBLISHED_SCHEDULE_BASELINE.ISB;
+}
+
+function getCoverageSummary(filteredOutboundRows) {
+  const coverage = state.raw?.coverageMeta?.departures;
+  const shownCount = filteredOutboundRows.length;
+  if (!coverage) {
+    return { label: "Unknown", cls: "signalMedium", detail: `${shownCount} departure row${shownCount === 1 ? "" : "s"} shown in the selected window.` };
+  }
+  if (coverage.truncatedPossible) {
+    return {
+      label: "Check coverage",
+      cls: "signalHigh",
+      detail: `${shownCount} departure row${shownCount === 1 ? "" : "s"} shown in the selected window. The source pull signalled extra departure pages beyond the configured page cap, so scheduled counts may be understated.`
+    };
+  }
+  return {
+    label: "Good",
+    cls: "signalLow",
+    detail: `${shownCount} departure row${shownCount === 1 ? "" : "s"} shown in the selected window. No extra departure page was signalled by the source pull.`
+  };
 }
 
 function getBaselineComparison() {
   const rows = getEarlyWarningRows();
   const outbound = rows.filter((r) => r.direction === "Departure");
-  const windowDays = getSelectedWindowDays();
   const entries = getBaselineEntriesForScope();
 
   const routeLines = entries.map((entry) => {
-    const expected = (entry.weekly / 7) * windowDays;
     const matching = outbound.filter((r) =>
       String(r.destination || "").toUpperCase() === entry.hub &&
       String(r.airline || "").toLowerCase() === entry.airline.toLowerCase()
     );
     const usable = matching.filter((r) => !isCancelled(r) && !isDiverted(r) && !isDelayed60(r));
+
+    const publishedSlots = getPublishedWindowSlots(entry);
+    const rolling = getRollingBaselineForEntry(entry);
+    const weeklyFallback = getWeeklyFallbackExpected(entry);
+
+    let expected = weeklyFallback;
+    let expectedDisplay = weeklyFallback.toFixed(1);
+    let expectedSubline = "Fallback from weekly published count until a day specific slot model or rolling history is available.";
+    let baselineSource = "weeklyFallback";
+
+    if (publishedSlots.length) {
+      expected = publishedSlots.length;
+      expectedDisplay = String(publishedSlots.length);
+      expectedSubline = `Published slots: ${formatSlotTimes(publishedSlots)}`;
+      baselineSource = "publishedSlots";
+    } else if (rolling.sampleCount >= 3 && rolling.expectedCount != null) {
+      expected = rolling.expectedCount;
+      expectedDisplay = rolling.expectedCount.toFixed(1);
+      expectedSubline = `Observed rolling baseline from ${rolling.sampleCount} service day${rolling.sampleCount === 1 ? "" : "s"}: ${formatSlotTimes(rolling.slots)}`;
+      baselineSource = "rollingHistory";
+    }
+
     return {
       ...entry,
       expected,
+      expectedDisplay,
+      expectedSubline,
+      baselineSource,
+      rollingSampleCount: rolling.sampleCount,
       current: matching.length,
       usable: usable.length,
       estPax: usable.reduce((sum, r) => sum + estimatePax(r), 0)
     };
   });
 
-  const expectedTotal = routeLines.reduce((sum, r) => sum + r.expected, 0);
+  const expectedTotal = routeLines.reduce((sum, r) => sum + Number(r.expected || 0), 0);
   const currentTotal = routeLines.reduce((sum, r) => sum + r.current, 0);
   const usableTotal = routeLines.reduce((sum, r) => sum + r.usable, 0);
   const estPaxTotal = routeLines.reduce((sum, r) => sum + r.estPax, 0);
@@ -281,7 +447,7 @@ function getBaselineComparison() {
     if (ratio < 0.4) signal = "Low";
     else if (ratio < 0.75) signal = "Tightening";
   }
-  return { routeLines, expectedTotal, currentTotal, usableTotal, estPaxTotal, signal, windowDays };
+  return { routeLines, expectedTotal, currentTotal, usableTotal, estPaxTotal, signal };
 }
 
 function getUpcomingUsableOutbound(hoursAhead = 24) {
@@ -312,7 +478,8 @@ function getEarlyWarningModel() {
   }
   const usablePax12 = upcoming12.reduce((sum, row) => sum + estimatePax(row), 0);
   const usablePax24 = upcoming24.reduce((sum, row) => sum + estimatePax(row), 0);
-  return { baseline, upcoming12, upcoming24, ratio, severity, signal, usablePax12, usablePax24 };
+  const coverage = getCoverageSummary(getEarlyWarningRows().filter((row) => row.direction === "Departure"));
+  return { baseline, upcoming12, upcoming24, ratio, severity, signal, usablePax12, usablePax24, coverage };
 }
 
 function renderKpis(rows) {
@@ -489,10 +656,11 @@ function renderEarlyWarning() {
   const model = getEarlyWarningModel();
   const severityClass = model.severity === "high" ? "warningRiskHigh" : (model.severity === "medium" ? "warningRiskMedium" : "warningRiskLow");
   cardsEl.innerHTML = `
-    <div class="warningCard ${severityClass}"><div class="warningCardLabel">Overall signal</div><div class="warningCardValue">${model.signal}</div><div class="warningCardSub">Based on current usable hub departures versus published normal for the selected scope and day window.</div></div>
+    <div class="warningCard ${severityClass}"><div class="warningCardLabel">Overall signal</div><div class="warningCardValue">${model.signal}</div><div class="warningCardSub">Based on current usable hub departures versus the normal expected level for the selected scope and day window.</div></div>
     <div class="warningCard"><div class="warningCardLabel">Usable departures next 12h</div><div class="warningCardValue">${model.upcoming12.length}</div><div class="warningCardSub">Operational departures to key hubs that are not cancelled, diverted, or delayed more than 60 minutes.</div></div>
     <div class="warningCard"><div class="warningCardLabel">Est. usable PAX next 12h</div><div class="warningCardValue">${formatNumber(model.usablePax12)}</div><div class="warningCardSub">Estimated onward passenger carrying capacity using the selected load factor.</div></div>
-    <div class="warningCard"><div class="warningCardLabel">Published normal this window</div><div class="warningCardValue">${model.baseline.expectedTotal.toFixed(1)}</div><div class="warningCardSub">Approximate baseline flights from published Gulf carrier schedules for this scope.</div></div>
+    <div class="warningCard"><div class="warningCardLabel">Normal expected in window</div><div class="warningCardValue">${model.baseline.expectedTotal.toFixed(1)}</div><div class="warningCardSub">Uses route specific day slots when loaded, otherwise rolling history if enough snapshots exist, otherwise a weekly fallback.</div></div>
+    <div class="warningCard"><div class="warningCardLabel">Coverage</div><div class="warningCardValue">${model.coverage.label}</div><div class="warningCardSub">${escapeHtml(model.coverage.detail)}</div></div>
     <div class="warningCard"><div class="warningCardLabel">Snapshots</div><div class="warningCardValue">${state.snapshotMeta.recentCount ?? "—"}</div><div class="warningCardSub">${escapeHtml(state.snapshotMeta.saved ? "Latest snapshot saved on refresh." : state.snapshotMeta.note || "Snapshot collection not active.")}</div></div>`;
 
   if (!model.baseline.routeLines.length) {
@@ -505,7 +673,7 @@ function renderEarlyWarning() {
       return `<tr>
         <td>${line.hub}</td>
         <td>${escapeHtml(line.airline)}</td>
-        <td>${line.expected.toFixed(1)}</td>
+        <td>${escapeHtml(line.expectedDisplay)}<span class="tableSubMeta">${escapeHtml(line.expectedSubline)}</span></td>
         <td>${line.current}</td>
         <td>${line.usable}</td>
         <td>~${formatNumber(line.estPax)}</td>
@@ -527,7 +695,8 @@ function renderEarlyWarning() {
     </tr>`).join("");
   }
 
-  snapshotEl.innerHTML = `${escapeHtml(state.snapshotMeta.note || "Snapshot saving has not been configured yet.")}${state.snapshotMeta.pathname ? `<br><span class="tableSubMeta">Latest snapshot: ${escapeHtml(state.snapshotMeta.pathname)}</span>` : ""}`;
+  const historyNote = state.raw?.historyMeta?.note ? `<br><span class="tableSubMeta">${escapeHtml(state.raw.historyMeta.note)}</span>` : "";
+  snapshotEl.innerHTML = `${escapeHtml(state.snapshotMeta.note || "Snapshot saving has not been configured yet.")}${state.snapshotMeta.pathname ? `<br><span class="tableSubMeta">Latest snapshot: ${escapeHtml(state.snapshotMeta.pathname)}</span>` : ""}${historyNote}`;
 }
 
 function renderStaleStatus() {
@@ -576,7 +745,7 @@ function buildInstructions() {
     <p><strong>How to use it</strong></p>
     <ul>
       <li><strong>Flights</strong> shows the live flight rows for the current scope.</li>
-      <li><strong>Early Warning</strong> compares current usable outbound hub departures against a published Gulf schedule baseline and highlights where options are tightening.</li>
+      <li><strong>Early Warning</strong> compares current usable outbound hub departures against the normal expected level for the same day window and highlights where options are tightening across Gulf, Turkey, UK and Thailand routes where a baseline is configured.</li>
       <li><strong>Airlines</strong> groups the visible rows by carrier.</li>
       <li><strong>Airports</strong> shows a quick airport and hub overview.</li>
       <li><strong>Day</strong> switches between today, tomorrow, and all flights in the shared cached window.</li>
@@ -597,9 +766,10 @@ function buildInstructions() {
     <ul>
       <li>The Early Warning view focuses on practical outbound hub options rather than every flight equally.</li>
       <li><strong>Usable</strong> means a key hub departure that is not cancelled, not diverted, and not delayed more than 60 minutes.</li>
-      <li><strong>Published normal</strong> is an external baseline built from published schedules for key Gulf carriers into Pakistan.</li>
-      <li>A tightening or low signal means the current usable options are materially below the published normal level for the selected scope and day window.</li>
-      <li>Snapshots begin saving from fresh refreshes once private Vercel Blob is configured, so the historical baseline can strengthen over time.</li>
+      <li>The current day slot model now covers the main Doha, Dubai, Abu Dhabi, Istanbul, Gatwick, Bangkok, Muscat, and Kuwait routes where a reliable published schedule was found.</li>
+      <li><strong>Normal expected in window</strong> uses route specific day slots for the selected airport where they have been loaded, otherwise a rolling observed baseline from snapshots if enough history exists, otherwise a weekly fallback.</li>
+      <li>A tightening or low signal means the current usable options are materially below the normal expected level for the selected scope and day window.</li>
+      <li>Snapshots begin saving from fresh refreshes once private Vercel Blob is configured, so the historical baseline can strengthen over time and reduce reliance on fixed schedule assumptions.</li>
     </ul>`;
 }
 
@@ -622,7 +792,7 @@ function buildBriefReadout() {
     <p><strong>Current scope:</strong> ${escapeHtml(state.scopeLabel)}.</p>
     <p><strong>Current filtered board:</strong> ${rows.length} flights.</p>
     <p><strong>Data age:</strong> ${Math.floor(getDataAgeSeconds() / 60)} minutes.</p>
-    <p><strong>Early warning signal:</strong> ${warning.signal}. Usable key hub departures in next 12 hours: ${warning.upcoming12.length}. Estimated usable PAX in next 12 hours: ~${formatNumber(warning.usablePax12)}.</p>
+    <p><strong>Early warning signal:</strong> ${warning.signal}. Usable key hub departures in next 12 hours: ${warning.upcoming12.length}. Estimated usable PAX in next 12 hours: ~${formatNumber(warning.usablePax12)}. Coverage: ${warning.coverage.label}. ${warning.coverage.detail}</p>
     <p><strong>Disruption picture:</strong> ${cancelled.length} cancelled, ${diverted.length} diverted, ${delayed.length} delayed over 60 minutes.</p>
     <p><strong>Estimated affected passengers:</strong> ~${formatNumber(cancelledPax)} cancelled PAX, ~${formatNumber(divertedPax)} diverted PAX, ~${formatNumber(delayedPax)} delayed PAX.</p>
     <p><strong>Most severe rows:</strong></p>
@@ -821,3 +991,4 @@ document.getElementById("briefModal").addEventListener("click", (e) => { if (e.t
 document.getElementById("airlineStatusModal").addEventListener("click", (e) => { if (e.target.id === "airlineStatusModal") closeAirlineStatus(); });
 
 load();
+

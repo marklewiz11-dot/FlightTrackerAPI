@@ -1,5 +1,5 @@
 export default async function handler(req, res) {
-  const apiKey = "hn1UO6XF9P3DrZPwMPi5ABgWXEV3wrvF";
+  const apiKey = "PASTE_YOUR_FLIGHTAWARE_KEY_HERE";
   const base = "https://aeroapi.flightaware.com/aeroapi";
   const CACHE_SECONDS = 3600;
   const BROWSER_CACHE_SECONDS = 0;
@@ -298,13 +298,34 @@ export default async function handler(req, res) {
     return { start: startDate.toISOString().replace(".000Z", "Z"), end: endDate.toISOString().replace(".000Z", "Z") };
   }
 
-  async function getJson(url) {
+  async function getJsonWithMeta(url, collectionKey) {
     const r = await fetch(url, { headers: headers() });
     if (!r.ok) {
       const text = await r.text();
       throw new Error(`${r.status} ${text}`);
     }
-    return r.json();
+    const json = await r.json();
+    const collection = Array.isArray(json?.[collectionKey]) ? json[collectionKey] : [];
+    return {
+      json,
+      meta: {
+        returnedCount: collection.length,
+        numPagesReturned: Number(json?.num_pages || 1),
+        truncatedPossible: Boolean(json?.links?.next)
+      }
+    };
+  }
+
+  function getPakistanDateKey(value) {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Karachi", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
+  }
+
+  function getPakistanWeekdayKey(value) {
+    return new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Karachi", weekday: "short" }).format(new Date(value));
+  }
+
+  function getPakistanTimeKey(value) {
+    return new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Karachi", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
   }
 
   function resolveScope(scopeParam) {
@@ -315,22 +336,57 @@ export default async function handler(req, res) {
     return { key: "ISB", airportIds: ["OPIS"], pageLimitMap: { OPIS: 3 }, label: "Islamabad default" };
   }
 
+  function buildCoverageMeta(byAirport) {
+    const airportEntries = Object.entries(byAirport || {});
+    const departureEntries = airportEntries.map(([airportCode, info]) => ({ airportCode, ...(info.departures || {}) }));
+    const arrivalEntries = airportEntries.map(([airportCode, info]) => ({ airportCode, ...(info.arrivals || {}) }));
+    const anyDepartureTruncated = departureEntries.some((item) => item.truncatedPossible);
+    const anyArrivalTruncated = arrivalEntries.some((item) => item.truncatedPossible);
+    return {
+      byAirport,
+      departures: {
+        truncatedPossible: anyDepartureTruncated,
+        returnedCount: departureEntries.reduce((sum, item) => sum + Number(item.returnedCount || 0), 0),
+        note: anyDepartureTruncated
+          ? "Additional departure pages exist beyond the configured page cap, so scheduled counts may be understated."
+          : "No extra departure page was signalled by the source pull."
+      },
+      arrivals: {
+        truncatedPossible: anyArrivalTruncated,
+        returnedCount: arrivalEntries.reduce((sum, item) => sum + Number(item.returnedCount || 0), 0),
+        note: anyArrivalTruncated
+          ? "Additional arrival pages exist beyond the configured page cap."
+          : "No extra arrival page was signalled by the source pull."
+      }
+    };
+  }
+
   async function fetchWindowForAirports(airportIds, start, end, pageLimitMap) {
     const allFlights = [];
+    const coverageByAirport = {};
     for (const airportId of airportIds) {
       const airport = AIRPORTS[airportId];
       const maxPages = pageLimitMap[airportId] || 1;
       const arrivalsUrl = `${base}/airports/${airportId}/flights/scheduled_arrivals?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=${maxPages}`;
       const departuresUrl = `${base}/airports/${airportId}/flights/scheduled_departures?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=${maxPages}`;
-      const [arrivalsRaw, departuresRaw] = await Promise.all([getJson(arrivalsUrl), getJson(departuresUrl)]);
+      const [arrivalsResult, departuresResult] = await Promise.all([
+        getJsonWithMeta(arrivalsUrl, "scheduled_arrivals"),
+        getJsonWithMeta(departuresUrl, "scheduled_departures")
+      ]);
+      const arrivalsRaw = arrivalsResult.json;
+      const departuresRaw = departuresResult.json;
       const arrivals = dedupe(Array.isArray(arrivalsRaw.scheduled_arrivals) ? arrivalsRaw.scheduled_arrivals.map((f) => serialiseArrival(f, airport)) : []);
       const departures = dedupe(Array.isArray(departuresRaw.scheduled_departures) ? departuresRaw.scheduled_departures.map((f) => serialiseDeparture(f, airport)) : []);
+      coverageByAirport[airport.code] = {
+        arrivals: { ...arrivalsResult.meta, maxPagesRequested: maxPages, uniqueCount: arrivals.length },
+        departures: { ...departuresResult.meta, maxPagesRequested: maxPages, uniqueCount: departures.length }
+      };
       allFlights.push(...arrivals, ...departures);
     }
-    return dedupe(allFlights);
+    return { flights: dedupe(allFlights), coverageMeta: buildCoverageMeta(coverageByAirport) };
   }
 
-  function buildSnapshotSummary(scope, flights, generatedAt) {
+  function buildSnapshotSummary(scope, flights, generatedAt, coverageMeta) {
     const outbound = flights.filter((f) => f.direction === "Departure");
     const keyHub = outbound.filter((f) => KEY_HUBS.includes(String(f.destination || "").toUpperCase()));
     const usable = keyHub.filter((f) => f.status !== "Cancelled" && f.status !== "Diverted" && Number(f.delayMinutes || 0) < 60);
@@ -346,6 +402,18 @@ export default async function handler(req, res) {
         estimatedUsablePax: usableMatching.reduce((sum, f) => sum + (Number(f.estimatedPax || 0)), 0)
       };
     });
+    const departureSlots = keyHub
+      .filter((f) => f.scheduledDep || f.bestDep)
+      .map((f) => ({
+        hub: f.destination,
+        airline: f.airline,
+        number: f.number,
+        scheduledDep: f.scheduledDep || f.bestDep,
+        delayMinutes: Number(f.delayMinutes || 0),
+        status: f.status,
+        usable: f.status !== "Cancelled" && f.status !== "Diverted" && Number(f.delayMinutes || 0) < 60
+      }));
+
     return {
       generatedAt,
       scope: scope.key,
@@ -353,7 +421,9 @@ export default async function handler(req, res) {
       totalFlights: flights.length,
       keyHubDepartures: keyHub.length,
       usableKeyHubDepartures: usable.length,
-      routeSummary
+      coverageMeta,
+      routeSummary,
+      departureSlots
     };
   }
 
@@ -387,26 +457,132 @@ export default async function handler(req, res) {
     }
   }
 
+
+  function buildRollingHistoryFromSnapshots(snapshots) {
+    const serviceDateMap = new Map();
+
+    for (const snapshot of snapshots) {
+      const slots = Array.isArray(snapshot?.departureSlots) ? snapshot.departureSlots : [];
+      for (const slot of slots) {
+        if (!slot?.scheduledDep || !slot?.hub || !slot?.airline) continue;
+        const routeKey = `${slot.hub}|${slot.airline}`;
+        const serviceDate = getPakistanDateKey(slot.scheduledDep);
+        const weekday = getPakistanWeekdayKey(slot.scheduledDep);
+        const dedupeKey = `${routeKey}|${serviceDate}`;
+        if (!serviceDateMap.has(dedupeKey)) {
+          serviceDateMap.set(dedupeKey, { routeKey, weekday, times: new Set(), usable: 0, scheduled: 0 });
+        }
+        const item = serviceDateMap.get(dedupeKey);
+        item.scheduled += 1;
+        item.times.add(getPakistanTimeKey(slot.scheduledDep));
+        if (slot.usable) item.usable += 1;
+      }
+    }
+
+    const routeWeekday = {};
+    for (const item of serviceDateMap.values()) {
+      routeWeekday[item.routeKey] ||= {};
+      routeWeekday[item.routeKey][item.weekday] ||= { sampleCount: 0, scheduledTotal: 0, usableTotal: 0, slotCounts: {} };
+      const target = routeWeekday[item.routeKey][item.weekday];
+      target.sampleCount += 1;
+      target.scheduledTotal += item.scheduled;
+      target.usableTotal += item.usable;
+      for (const time of item.times) {
+        target.slotCounts[time] = (target.slotCounts[time] || 0) + 1;
+      }
+    }
+
+    const rollingByRouteWeekday = {};
+    for (const [routeKey, weekdays] of Object.entries(routeWeekday)) {
+      rollingByRouteWeekday[routeKey] = {};
+      for (const [weekday, data] of Object.entries(weekdays)) {
+        const normalSlots = Object.entries(data.slotCounts)
+          .filter(([, count]) => count >= Math.max(1, Math.ceil(data.sampleCount * 0.5)))
+          .sort((a, b) => a[0].localeCompare(b[0]))
+          .map(([time]) => time);
+        rollingByRouteWeekday[routeKey][weekday] = {
+          sampleCount: data.sampleCount,
+          expectedScheduledAvg: Number((data.scheduledTotal / data.sampleCount).toFixed(2)),
+          expectedUsableAvg: Number((data.usableTotal / data.sampleCount).toFixed(2)),
+          normalSlots
+        };
+      }
+    }
+
+    const serviceDays = serviceDateMap.size;
+    return {
+      enabled: true,
+      recentSnapshots: snapshots.length,
+      serviceDays,
+      note: serviceDays >= 3
+        ? `Rolling baseline available from ${serviceDays} observed service day${serviceDays === 1 ? "" : "s"}.`
+        : `History is building. ${serviceDays} observed service day${serviceDays === 1 ? "" : "s"} captured so far.`,
+      rollingByRouteWeekday
+    };
+  }
+
+  async function loadRollingHistory(scope) {
+    const tokenPresent = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+    if (!tokenPresent) {
+      return { enabled: false, recentSnapshots: 0, serviceDays: 0, note: "Rolling baseline not available until Blob history is enabled.", rollingByRouteWeekday: {} };
+    }
+    try {
+      const sdk = await import("@vercel/blob");
+      if (!sdk?.list || !sdk?.get) {
+        return { enabled: true, recentSnapshots: 0, serviceDays: 0, note: "Rolling baseline needs @vercel/blob list and get support in the project.", rollingByRouteWeekday: {} };
+      }
+
+      let cursor;
+      let hasMore = true;
+      const blobs = [];
+      while (hasMore && blobs.length < 40) {
+        const listed = await sdk.list({ prefix: `snapshots/flight-tracker/${scope.key}/`, limit: 20, cursor });
+        blobs.push(...(Array.isArray(listed?.blobs) ? listed.blobs : []));
+        hasMore = Boolean(listed?.hasMore) && blobs.length < 40;
+        cursor = listed?.cursor;
+      }
+
+      const ordered = blobs
+        .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime())
+        .slice(0, 21);
+
+      const snapshots = [];
+      for (const blob of ordered) {
+        const result = await sdk.get(blob.pathname, { access: "private" });
+        if (!result || result.statusCode !== 200) continue;
+        const text = await new Response(result.stream).text();
+        snapshots.push(JSON.parse(text));
+      }
+
+      return buildRollingHistoryFromSnapshots(snapshots);
+    } catch (error) {
+      return { enabled: true, recentSnapshots: 0, serviceDays: 0, note: error?.message || "Rolling baseline could not be loaded.", rollingByRouteWeekday: {} };
+    }
+  }
+
   try {
     const generatedAt = new Date().toISOString();
     const requestedScope = req.query?.airport || req.query?.scope || "ISB";
     const scope = resolveScope(requestedScope);
     const { start, end } = getBroadPakistanWindow();
-    const dedupedFlights = await fetchWindowForAirports(scope.airportIds, start, end, scope.pageLimitMap);
+    const { flights: dedupedFlights, coverageMeta } = await fetchWindowForAirports(scope.airportIds, start, end, scope.pageLimitMap);
     dedupedFlights.sort((a, b) => {
       const aTime = toMillis(a.bestDep || a.bestArr || a.scheduledDep || a.scheduledArr) || 0;
       const bTime = toMillis(b.bestDep || b.bestArr || b.scheduledDep || b.scheduledArr) || 0;
       return aTime - bTime;
     });
     const flightsWithPax = dedupedFlights.map((f) => ({ ...f, estimatedPax: 0 }));
-    const snapshotSummary = buildSnapshotSummary(scope, flightsWithPax, generatedAt);
+    const snapshotSummary = buildSnapshotSummary(scope, flightsWithPax, generatedAt, coverageMeta);
     const snapshotMeta = await saveSnapshot(scope, snapshotSummary);
+    const historyMeta = await loadRollingHistory(scope);
     return sendJson(200, {
       generatedAt,
       cacheSeconds: CACHE_SECONDS,
       scope: scope.key,
       scopeLabel: scope.label,
       snapshotMeta,
+      coverageMeta,
+      historyMeta,
       filtersMeta: {
         airports: ["ISB", "LHE", "KHI", "ALL"],
         airlines: [...new Set(dedupedFlights.map((f) => f.airline).filter(Boolean))].sort(),
@@ -424,6 +600,8 @@ export default async function handler(req, res) {
       scope: "ISB",
       scopeLabel: "Islamabad default",
       snapshotMeta: { enabled: false, saved: false, note: "Snapshot saving unavailable because the flight refresh failed.", recentCount: null },
+      coverageMeta: { departures: { truncatedPossible: false, returnedCount: 0, note: "Coverage unavailable because the flight refresh failed." }, arrivals: { truncatedPossible: false, returnedCount: 0, note: "Coverage unavailable because the flight refresh failed." }, byAirport: {} },
+      historyMeta: { enabled: false, recentSnapshots: 0, serviceDays: 0, note: "Rolling baseline unavailable because the flight refresh failed.", rollingByRouteWeekday: {} },
       filtersMeta: { airports: ["ISB", "LHE", "KHI", "ALL"], airlines: [], statuses: [], directions: [] },
       flights: [],
       warnings: [error.message || "Failed to load FlightAware data."]

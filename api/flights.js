@@ -1,5 +1,5 @@
 export default async function handler(req, res) {
-  const apiKey = "hn1UO6XF9P3DrZPwMPi5ABgWXEV3wrvF";
+  const apiKey = "PASTE_YOUR_FLIGHTAWARE_KEY_HERE";
   const base = "https://aeroapi.flightaware.com/aeroapi";
   const CACHE_SECONDS = 3600;
   const BROWSER_CACHE_SECONDS = 0;
@@ -328,6 +328,20 @@ export default async function handler(req, res) {
     return new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Karachi", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
   }
 
+  function getPakistanWeekStartKey(value) {
+    const dt = new Date(value);
+    const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Karachi", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(dt);
+    const vals = Object.fromEntries(parts.filter((p) => p.type !== "literal").map((p) => [p.type, p.value]));
+    const pktMidnight = new Date(`${vals.year}-${vals.month}-${vals.day}T00:00:00+05:00`);
+    const jsDay = pktMidnight.getUTCDay();
+    const mondayOffset = (jsDay + 6) % 7;
+    pktMidnight.setUTCDate(pktMidnight.getUTCDate() - mondayOffset);
+    const y = pktMidnight.getUTCFullYear();
+    const m = String(pktMidnight.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(pktMidnight.getUTCDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+
   function resolveScope(scopeParam) {
     const scope = String(scopeParam || "ISB").toUpperCase();
     if (scope === "LHE") return { key: "LHE", airportIds: ["OPLA"], pageLimitMap: { OPLA: 1 }, label: "Lahore on demand" };
@@ -461,24 +475,58 @@ export default async function handler(req, res) {
 
 
   function buildRollingHistoryFromSnapshots(snapshots) {
-    const serviceDateMap = new Map();
+    const uniqueFlights = new Map();
 
     for (const snapshot of snapshots) {
       const slots = Array.isArray(snapshot?.departureSlots) ? snapshot.departureSlots : [];
       for (const slot of slots) {
         if (!slot?.scheduledDep || !slot?.hub || !slot?.airline) continue;
-        const routeKey = `${slot.origin || ""}|${slot.hub}|${slot.airline}`;
+        const origin = slot.origin || "";
+        const routeKey = `${origin}|${slot.hub}|${slot.airline}`;
         const serviceDate = getPakistanDateKey(slot.scheduledDep);
         const weekday = getPakistanWeekdayKey(slot.scheduledDep);
-        const dedupeKey = `${routeKey}|${serviceDate}`;
-        if (!serviceDateMap.has(dedupeKey)) {
-          serviceDateMap.set(dedupeKey, { routeKey, weekday, times: new Set(), usable: 0, scheduled: 0 });
+        const weekStart = getPakistanWeekStartKey(slot.scheduledDep);
+        const timeKey = getPakistanTimeKey(slot.scheduledDep);
+        const flightKey = `${routeKey}|${serviceDate}|${slot.number || ""}|${timeKey}`;
+        if (!uniqueFlights.has(flightKey)) {
+          uniqueFlights.set(flightKey, {
+            routeKey,
+            origin,
+            hub: slot.hub,
+            airline: slot.airline,
+            serviceDate,
+            weekday,
+            weekStart,
+            timeKey,
+            usable: Boolean(slot.usable)
+          });
+        } else if (slot.usable) {
+          uniqueFlights.get(flightKey).usable = true;
         }
-        const item = serviceDateMap.get(dedupeKey);
-        item.scheduled += 1;
-        item.times.add(getPakistanTimeKey(slot.scheduledDep));
-        if (slot.usable) item.usable += 1;
       }
+    }
+
+    const serviceDateMap = new Map();
+    for (const flight of uniqueFlights.values()) {
+      const dedupeKey = `${flight.routeKey}|${flight.serviceDate}`;
+      if (!serviceDateMap.has(dedupeKey)) {
+        serviceDateMap.set(dedupeKey, {
+          routeKey: flight.routeKey,
+          origin: flight.origin,
+          hub: flight.hub,
+          airline: flight.airline,
+          weekday: flight.weekday,
+          serviceDate: flight.serviceDate,
+          weekStart: flight.weekStart,
+          times: new Set(),
+          usable: 0,
+          scheduled: 0
+        });
+      }
+      const item = serviceDateMap.get(dedupeKey);
+      item.scheduled += 1;
+      item.times.add(flight.timeKey);
+      if (flight.usable) item.usable += 1;
     }
 
     const routeWeekday = {};
@@ -511,27 +559,49 @@ export default async function handler(req, res) {
       }
     }
 
+    const airlineDayMap = new Map();
+    const airlineWeekMap = new Map();
+    for (const item of serviceDateMap.values()) {
+      const airlineDayKey = `${item.origin}|${item.airline}|${item.serviceDate}`;
+      if (!airlineDayMap.has(airlineDayKey)) {
+        airlineDayMap.set(airlineDayKey, { origin: item.origin, airline: item.airline, serviceDate: item.serviceDate, scheduled: 0, usable: 0 });
+      }
+      airlineDayMap.get(airlineDayKey).scheduled += item.scheduled;
+      airlineDayMap.get(airlineDayKey).usable += item.usable;
+
+      const airlineWeekKey = `${item.origin}|${item.airline}|${item.weekStart}`;
+      if (!airlineWeekMap.has(airlineWeekKey)) {
+        airlineWeekMap.set(airlineWeekKey, { origin: item.origin, airline: item.airline, weekStart: item.weekStart, scheduled: 0, usable: 0 });
+      }
+      airlineWeekMap.get(airlineWeekKey).scheduled += item.scheduled;
+      airlineWeekMap.get(airlineWeekKey).usable += item.usable;
+    }
+
     const serviceDays = serviceDateMap.size;
     return {
       enabled: true,
       recentSnapshots: snapshots.length,
       serviceDays,
       note: serviceDays >= 3
-        ? `Rolling baseline available from ${serviceDays} observed service day${serviceDays === 1 ? "" : "s"}.`
+        ? `Rolling baseline available from ${serviceDays} observed service day${serviceDays === 1 ? "" : "s"}. Weekday matching is based on unique scheduled departures, not repeat refreshes of the same flight.`
         : `History is building. ${serviceDays} observed service day${serviceDays === 1 ? "" : "s"} captured so far.`,
-      rollingByRouteWeekday
+      rollingByRouteWeekday,
+      timelineMeta: {
+        airlineDaily: [...airlineDayMap.values()].sort((a, b) => a.serviceDate.localeCompare(b.serviceDate) || a.airline.localeCompare(b.airline)),
+        airlineWeekly: [...airlineWeekMap.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart) || a.airline.localeCompare(b.airline))
+      }
     };
   }
 
   async function loadRollingHistory(scope) {
     const tokenPresent = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
     if (!tokenPresent) {
-      return { enabled: false, recentSnapshots: 0, serviceDays: 0, note: "Rolling baseline not available until Blob history is enabled.", rollingByRouteWeekday: {} };
+      return { enabled: false, recentSnapshots: 0, serviceDays: 0, note: "Rolling baseline not available until Blob history is enabled.", rollingByRouteWeekday: {}, timelineMeta: { airlineDaily: [], airlineWeekly: [] } };
     }
     try {
       const sdk = await import("@vercel/blob");
       if (!sdk?.list || !sdk?.get) {
-        return { enabled: true, recentSnapshots: 0, serviceDays: 0, note: "Rolling baseline needs @vercel/blob list and get support in the project.", rollingByRouteWeekday: {} };
+        return { enabled: true, recentSnapshots: 0, serviceDays: 0, note: "Rolling baseline needs @vercel/blob list and get support in the project.", rollingByRouteWeekday: {}, timelineMeta: { airlineDaily: [], airlineWeekly: [] } };
       }
 
       let cursor;
@@ -558,7 +628,7 @@ export default async function handler(req, res) {
 
       return buildRollingHistoryFromSnapshots(snapshots);
     } catch (error) {
-      return { enabled: true, recentSnapshots: 0, serviceDays: 0, note: error?.message || "Rolling baseline could not be loaded.", rollingByRouteWeekday: {} };
+      return { enabled: true, recentSnapshots: 0, serviceDays: 0, note: error?.message || "Rolling baseline could not be loaded.", rollingByRouteWeekday: {}, timelineMeta: { airlineDaily: [], airlineWeekly: [] } };
     }
   }
 
@@ -603,7 +673,7 @@ export default async function handler(req, res) {
       scopeLabel: "Islamabad default",
       snapshotMeta: { enabled: false, saved: false, note: "Snapshot saving unavailable because the flight refresh failed.", recentCount: null },
       coverageMeta: { departures: { truncatedPossible: false, returnedCount: 0, note: "Coverage unavailable because the flight refresh failed." }, arrivals: { truncatedPossible: false, returnedCount: 0, note: "Coverage unavailable because the flight refresh failed." }, byAirport: {} },
-      historyMeta: { enabled: false, recentSnapshots: 0, serviceDays: 0, note: "Rolling baseline unavailable because the flight refresh failed.", rollingByRouteWeekday: {} },
+      historyMeta: { enabled: false, recentSnapshots: 0, serviceDays: 0, note: "Rolling baseline unavailable because the flight refresh failed.", rollingByRouteWeekday: {}, timelineMeta: { airlineDaily: [], airlineWeekly: [] } },
       filtersMeta: { airports: ["ISB", "LHE", "KHI", "ALL"], airlines: [], statuses: [], directions: [] },
       flights: [],
       warnings: [error.message || "Failed to load FlightAware data."]

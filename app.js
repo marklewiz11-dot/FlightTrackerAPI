@@ -81,58 +81,33 @@ function slotsAll(times) {
 
 const PUBLISHED_SCHEDULE_BASELINE = {
   ISB: [
-    { hub: "DOH", airline: "Qatar Airways", weeklyFallback: 14, slotsByWeekday: slotsAll(["03:30", "09:25"]) },
-    { hub: "DXB", airline: "Emirates", weeklyFallback: 10, slotsByWeekday: slotsAll(["03:15", "09:25"]) },
-    { hub: "DXB", airline: "flydubai", weeklyFallback: 7, slotsByWeekday: slotsAll(["06:05"]) },
-    { hub: "AUH", airline: "Etihad Airways", weeklyFallback: 14, slotsByWeekday: {
-      Sun: ["04:50", "19:45"], Mon: ["04:30", "19:25"], Tue: ["04:30", "19:25"], Wed: ["04:30", "19:25"],
-      Thu: ["04:30", "19:25"], Fri: ["04:30", "19:25"], Sat: ["04:30", "19:25"]
+    { origin: "ISB", hub: "DOH", airline: "Qatar Airways", weeklyFallback: 7, slotsByWeekday: slotsAll(["09:45"]) },
+    { origin: "ISB", hub: "DXB", airline: "Emirates", weeklyFallback: 10 },
+    { origin: "ISB", hub: "DXB", airline: "flydubai", weeklyFallback: 7 },
+    { origin: "ISB", hub: "AUH", airline: "Etihad Airways", weeklyFallback: 14 },
+    { origin: "ISB", hub: "IST", airline: "Turkish Airlines", weeklyFallback: 7, slotsByWeekday: slotsAll(["06:15"]) },
+    { origin: "ISB", hub: "LGW", airline: "British Airways", weeklyFallback: 3, slotsByWeekday: {
+      Sun: [], Mon: ["00:35"], Tue: [], Wed: [], Thu: ["00:35"], Fri: [], Sat: ["00:35"]
     } },
-    { hub: "IST", airline: "Turkish Airlines", weeklyFallback: 14, slotsByWeekday: slotsAll(["06:15", "10:20"]) },
-    { hub: "LGW", airline: "British Airways", weeklyFallback: 3, slotsByWeekday: {
-      Sun: [], Mon: ["00:35"], Tue: [], Wed: ["00:35"], Thu: [], Fri: [], Sat: ["00:35"]
-    } },
-    { hub: "BKK", airline: "Thai Airways", weeklyFallback: 4, slotsByWeekday: {
+    { origin: "ISB", hub: "BKK", airline: "Thai Airways", weeklyFallback: 4, slotsByWeekday: {
       Sun: [], Mon: ["23:20"], Tue: [], Wed: ["23:20"], Thu: [], Fri: ["23:20"], Sat: ["23:20"]
-    } },
-    { hub: "MCT", airline: "AirSial", weeklyFallback: 3, slotsByWeekday: {
-      Sun: [], Mon: ["10:50"], Tue: [], Wed: ["10:50"], Thu: [], Fri: [], Sat: ["10:50"]
     } }
   ],
   LHE: [
-    { hub: "DOH", airline: "Qatar Airways", weeklyFallback: 13, slotsByWeekday: {
-      Sun: ["02:55", "09:55"], Mon: ["02:55", "08:50"], Tue: ["02:55", "08:50"], Wed: ["02:55", "08:50"],
-      Thu: ["02:55", "08:50"], Fri: ["02:55", "08:50"], Sat: ["02:55", "08:50"]
-    } },
-    { hub: "DXB", airline: "Emirates", weeklyFallback: 14, slotsByWeekday: slotsAll(["03:25", "09:10"]) },
-    { hub: "DXB", airline: "flydubai", weeklyFallback: 7, slotsByWeekday: slotsAll(["09:25"]) },
-    { hub: "AUH", airline: "Etihad Airways", weeklyFallback: 11, slotsByWeekday: {
-      Sun: ["04:40"], Mon: ["04:40", "19:45"], Tue: ["04:40", "19:45"], Wed: ["04:40", "19:45"],
-      Thu: ["19:45"], Fri: ["04:40", "19:45"], Sat: ["19:45"]
-    } },
-    { hub: "IST", airline: "Turkish Airlines", weeklyFallback: 14, slotsByWeekday: slotsAll(["05:35", "09:35"]) },
-    { hub: "BKK", airline: "Thai Airways", weeklyFallback: 6, slotsByWeekday: {
-      Sun: ["23:40"], Mon: ["23:45"], Tue: ["23:45"], Wed: [], Thu: ["23:45"], Fri: ["23:45"], Sat: ["23:45"]
-    } },
-    { hub: "KWI", airline: "Kuwait Airways", weeklyFallback: 3, slotsByWeekday: {
-      Sun: [], Mon: [], Tue: ["05:10"], Wed: [], Thu: ["05:10"], Fri: [], Sat: ["03:35"]
-    } }
+    { origin: "LHE", hub: "DOH", airline: "Qatar Airways", weeklyFallback: 14 },
+    { origin: "LHE", hub: "DXB", airline: "Emirates", weeklyFallback: 10 },
+    { origin: "LHE", hub: "DXB", airline: "flydubai", weeklyFallback: 7, slotsByWeekday: slotsAll(["12:05"]) },
+    { origin: "LHE", hub: "AUH", airline: "Etihad Airways", weeklyFallback: 14 },
+    { origin: "LHE", hub: "IST", airline: "Turkish Airlines", weeklyFallback: 7, slotsByWeekday: slotsAll(["10:10"]) },
+    { origin: "LHE", hub: "BKK", airline: "Thai Airways", weeklyFallback: 6 }
   ],
   KHI: [
-    { hub: "DOH", airline: "Qatar Airways", weeklyFallback: 14, slotsByWeekday: slotsAll(["03:50", "10:15"]) },
-    { hub: "DXB", airline: "Emirates", weeklyFallback: 21, slotsByWeekday: slotsAll(["03:00", "12:15", "22:40"]) },
-    { hub: "DXB", airline: "flydubai", weeklyFallback: 28, slotsByWeekday: slotsAll(["03:30", "10:00", "16:40", "23:55"]) },
-    { hub: "AUH", airline: "Etihad Airways", weeklyFallback: 28, slotsByWeekday: slotsAll(["05:25", "06:35", "12:05", "21:35"]) },
-    { hub: "IST", airline: "Turkish Airlines", weeklyFallback: 11, slotsByWeekday: {
-      Sun: ["05:50", "09:05"], Mon: ["05:50"], Tue: ["05:30"], Wed: ["05:30", "09:05"],
-      Thu: ["05:50"], Fri: ["05:50", "09:05"], Sat: ["05:50"]
-    } },
-    { hub: "BKK", airline: "Thai Airways", weeklyFallback: 5, slotsByWeekday: {
-      Sun: ["23:30"], Mon: [], Tue: ["23:30"], Wed: [], Thu: ["23:30"], Fri: ["23:30"], Sat: ["23:30"]
-    } },
-    { hub: "KWI", airline: "Jazeera Airways", weeklyFallback: 2, slotsByWeekday: {
-      Sun: [], Mon: [], Tue: ["03:20"], Wed: [], Thu: [], Fri: ["03:20"], Sat: []
-    } }
+    { origin: "KHI", hub: "DOH", airline: "Qatar Airways", weeklyFallback: 7, slotsByWeekday: slotsAll(["04:20"]) },
+    { origin: "KHI", hub: "DXB", airline: "Emirates", weeklyFallback: 20 },
+    { origin: "KHI", hub: "DXB", airline: "flydubai", weeklyFallback: 28 },
+    { origin: "KHI", hub: "AUH", airline: "Etihad Airways", weeklyFallback: 28 },
+    { origin: "KHI", hub: "IST", airline: "Turkish Airlines", weeklyFallback: 7, slotsByWeekday: slotsAll(["06:15"]) },
+    { origin: "KHI", hub: "BKK", airline: "Thai Airways", weeklyFallback: 5 }
   ]
 };
 PUBLISHED_SCHEDULE_BASELINE.ALL = [
@@ -217,7 +192,7 @@ function getPublishedWindowSlots(entry) {
 
 function getRollingBaselineForEntry(entry) {
   const history = state.raw?.historyMeta?.rollingByRouteWeekday || {};
-  const routeKey = `${entry.hub}|${entry.airline}`;
+  const routeKey = `${entry.origin || state.airport}|${entry.hub}|${entry.airline || ""}`;
   const routeHistory = history[routeKey] || {};
   const selectedDates = getSelectedPakistanDates();
   const dayModels = selectedDates
@@ -398,6 +373,7 @@ function getBaselineComparison() {
 
   const routeLines = entries.map((entry) => {
     const matching = outbound.filter((r) =>
+      String(r.origin || "").toUpperCase() === String(entry.origin || state.airport).toUpperCase() &&
       String(r.destination || "").toUpperCase() === entry.hub &&
       String(r.airline || "").toLowerCase() === entry.airline.toLowerCase()
     );
@@ -409,7 +385,7 @@ function getBaselineComparison() {
 
     let expected = weeklyFallback;
     let expectedDisplay = weeklyFallback.toFixed(1);
-    let expectedSubline = "Fallback from weekly published count until a day specific slot model or rolling history is available.";
+    let expectedSubline = "Checked weekly frequency fallback. Used where an exact current weekday slot pattern was not verified strongly enough to hard code.";
     let baselineSource = "weeklyFallback";
 
     if (publishedSlots.length) {
@@ -664,13 +640,14 @@ function renderEarlyWarning() {
     <div class="warningCard"><div class="warningCardLabel">Snapshots</div><div class="warningCardValue">${state.snapshotMeta.recentCount ?? "—"}</div><div class="warningCardSub">${escapeHtml(state.snapshotMeta.saved ? "Latest snapshot saved on refresh." : state.snapshotMeta.note || "Snapshot collection not active.")}</div></div>`;
 
   if (!model.baseline.routeLines.length) {
-    rowsEl.innerHTML = `<tr><td colspan="7"><div class="emptyState">No baseline routes configured for this scope.</div></td></tr>`;
+    rowsEl.innerHTML = `<tr><td colspan="8"><div class="emptyState">No baseline routes configured for this scope.</div></td></tr>`;
   } else {
     rowsEl.innerHTML = model.baseline.routeLines.map((line) => {
       let signal = { label: "Normal", cls: "signalLow" };
       if (line.usable === 0 && line.expected > 0) signal = { label: "Low", cls: "signalHigh" };
       else if (line.usable < line.expected) signal = { label: "Tightening", cls: "signalMedium" };
       return `<tr>
+        <td>${escapeHtml(PAKISTAN_AIRPORT_NAMES[line.origin] || line.origin || state.airport)}</td>
         <td>${line.hub}</td>
         <td>${escapeHtml(line.airline)}</td>
         <td>${escapeHtml(line.expectedDisplay)}<span class="tableSubMeta">${escapeHtml(line.expectedSubline)}</span></td>
@@ -745,7 +722,7 @@ function buildInstructions() {
     <p><strong>How to use it</strong></p>
     <ul>
       <li><strong>Flights</strong> shows the live flight rows for the current scope.</li>
-      <li><strong>Early Warning</strong> compares current usable outbound hub departures against the normal expected level for the same day window and highlights where options are tightening across Gulf, Turkey, UK and Thailand routes where a baseline is configured.</li>
+      <li><strong>Early Warning</strong> compares current usable outbound departures against a checked baseline for the same selected day window.</li>
       <li><strong>Airlines</strong> groups the visible rows by carrier.</li>
       <li><strong>Airports</strong> shows a quick airport and hub overview.</li>
       <li><strong>Day</strong> switches between today, tomorrow, and all flights in the shared cached window.</li>
@@ -757,20 +734,21 @@ function buildInstructions() {
     <p><strong>How to read the board</strong></p>
     <ul>
       <li><strong>PAX</strong> means estimated passengers. It is not a booking count. It is a seat estimate based on aircraft type multiplied by the selected load factor.</li>
-      <li><strong>Cancelled</strong> and <strong>Delayed >60m</strong> tiles highlight material disruption. Cancelled lights red when cancellations are present. Delayed over 60 minutes lights amber when present.</li>
-      <li>The sub line under each flight uses the aircraft type, airline code, load factor, and estimated PAX. The Airline column shows the full carrier name.</li>
+      <li><strong>Cancelled</strong> and <strong>Delayed &gt;60m</strong> tiles highlight material disruption.</li>
       <li><strong>Fresh</strong>, <strong>Warning</strong>, and <strong>Stale</strong> are based on the age of the shared cached dataset for the current scope, not when your browser tab opened.</li>
     </ul>
 
     <p><strong>How to read Early Warning</strong></p>
     <ul>
       <li>The Early Warning view focuses on practical outbound hub options rather than every flight equally.</li>
-      <li><strong>Usable</strong> means a key hub departure that is not cancelled, not diverted, and not delayed more than 60 minutes.</li>
-      <li>The current day slot model now covers the main Doha, Dubai, Abu Dhabi, Istanbul, Gatwick, Bangkok, Muscat, and Kuwait routes where a reliable published schedule was found.</li>
-      <li><strong>Normal expected in window</strong> uses route specific day slots for the selected airport where they have been loaded, otherwise a rolling observed baseline from snapshots if enough history exists, otherwise a weekly fallback.</li>
-      <li>A tightening or low signal means the current usable options are materially below the normal expected level for the selected scope and day window.</li>
-      <li>Snapshots begin saving from fresh refreshes once private Vercel Blob is configured, so the historical baseline can strengthen over time and reduce reliance on fixed schedule assumptions.</li>
-    </ul>`;
+      <li><strong>From</strong> shows which Pakistan airport the route leaves from.</li>
+      <li><strong>Usable</strong> means a departure that is not cancelled, not diverted, and not delayed more than 60 minutes.</li>
+      <li><strong>Normal expected in window</strong> now uses a checked baseline route by route. Where current weekday slot timings were verified with confidence, those exact day slots are used. Where the timetable was less clear, the board uses a checked weekly frequency fallback rather than pretending to know an exact day pattern.</li>
+      <li>Only routes that have now been reviewed are shown in Early Warning. This keeps the table tighter but more trustworthy.</li>
+      <li>The coverage card matters. If the source signalled more pages than were pulled, current scheduled counts may still be understated even when the baseline is correct.</li>
+      <li>As Blob snapshot history builds up, the rolling baseline can gradually replace some weekly fallbacks with observed operating patterns from your own stored data.</li>
+    </ul>
+  `;
 }
 
 function buildBriefReadout() {
@@ -991,4 +969,3 @@ document.getElementById("briefModal").addEventListener("click", (e) => { if (e.t
 document.getElementById("airlineStatusModal").addEventListener("click", (e) => { if (e.target.id === "airlineStatusModal") closeAirlineStatus(); });
 
 load();
-

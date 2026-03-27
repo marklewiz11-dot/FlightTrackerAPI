@@ -1,5 +1,5 @@
 export default async function handler(req, res) {
-  const apiKey = "hn1UO6XF9P3DrZPwMPi5ABgWXEV3wrvF";
+  const apiKey = "PASTE_YOUR_FLIGHTAWARE_KEY_HERE";
   const base = "https://aeroapi.flightaware.com/aeroapi";
   const CACHE_SECONDS = 3600;
   const BROWSER_CACHE_SECONDS = 0;
@@ -669,59 +669,68 @@ export default async function handler(req, res) {
       let cursor;
       let hasMore = true;
       const dailyBlobs = [];
-      while (hasMore && dailyBlobs.length < 60) {
+      while (hasMore && dailyBlobs.length < 90) {
         const listed = await sdk.list({ prefix: `history/flight-tracker/${scope.key}/`, limit: 30, cursor });
         dailyBlobs.push(...(Array.isArray(listed?.blobs) ? listed.blobs : []));
-        hasMore = Boolean(listed?.hasMore) && dailyBlobs.length < 60;
+        hasMore = Boolean(listed?.hasMore) && dailyBlobs.length < 90;
         cursor = listed?.cursor;
       }
 
       const orderedDaily = dailyBlobs
         .sort((a, b) => String(a.pathname).localeCompare(String(b.pathname)))
-        .slice(-28);
+        .slice(-42);
 
-      if (orderedDaily.length) {
-        const dailyRecords = [];
-        for (const blob of orderedDaily) {
-          const result = await sdk.get(blob.pathname, { access: "private" });
-          if (!result || result.statusCode !== 200) continue;
-          const text = await new Response(result.stream).text();
-          dailyRecords.push(JSON.parse(text));
-        }
-        const dailyAsSnapshots = dailyRecords.map((record) => ({ departureSlots: Array.isArray(record?.departureSlots) ? record.departureSlots : [] }));
-        const history = buildRollingHistoryFromSnapshots(dailyAsSnapshots);
-        return {
-          ...history,
-          recentSnapshots: dailyRecords.length,
-          note: history.serviceDays >= 3
-            ? `Rolling baseline available from ${history.serviceDays} observed service day${history.serviceDays === 1 ? "" : "s"}. Matching uses day of week including weekends and ignores repeat refreshes of the same flight.`
-            : `History is building. ${history.serviceDays} observed service day${history.serviceDays === 1 ? "" : "s"} captured so far.`
-        };
+      const mergedSnapshots = [];
+      let loadedDailyCount = 0;
+      for (const blob of orderedDaily) {
+        const result = await sdk.get(blob.pathname, { access: "private" });
+        if (!result || result.statusCode !== 200) continue;
+        const text = await new Response(result.stream).text();
+        const record = JSON.parse(text);
+        mergedSnapshots.push({ departureSlots: Array.isArray(record?.departureSlots) ? record.departureSlots : [] });
+        loadedDailyCount += 1;
       }
 
       cursor = undefined;
       hasMore = true;
-      const blobs = [];
-      while (hasMore && blobs.length < 40) {
+      const snapshotBlobs = [];
+      while (hasMore && snapshotBlobs.length < 80) {
         const listed = await sdk.list({ prefix: `snapshots/flight-tracker/${scope.key}/`, limit: 20, cursor });
-        blobs.push(...(Array.isArray(listed?.blobs) ? listed.blobs : []));
-        hasMore = Boolean(listed?.hasMore) && blobs.length < 40;
+        snapshotBlobs.push(...(Array.isArray(listed?.blobs) ? listed.blobs : []));
+        hasMore = Boolean(listed?.hasMore) && snapshotBlobs.length < 80;
         cursor = listed?.cursor;
       }
 
-      const ordered = blobs
+      const orderedSnapshots = snapshotBlobs
         .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime())
-        .slice(0, 21);
+        .slice(0, 40);
 
-      const snapshots = [];
-      for (const blob of ordered) {
+      let loadedSnapshotCount = 0;
+      for (const blob of orderedSnapshots) {
         const result = await sdk.get(blob.pathname, { access: "private" });
         if (!result || result.statusCode !== 200) continue;
         const text = await new Response(result.stream).text();
-        snapshots.push(JSON.parse(text));
+        mergedSnapshots.push(JSON.parse(text));
+        loadedSnapshotCount += 1;
       }
 
-      return buildRollingHistoryFromSnapshots(snapshots);
+      if (!mergedSnapshots.length) {
+        return { enabled: true, recentSnapshots: 0, serviceDays: 0, note: "History is still building. No saved snapshot data has been loaded yet.", rollingByRouteWeekday: {}, timelineMeta: { airlineDaily: [], airlineWeekly: [] } };
+      }
+
+      const history = buildRollingHistoryFromSnapshots(mergedSnapshots);
+      const sourceSummary = [];
+      if (loadedDailyCount) sourceSummary.push(`${loadedDailyCount} service day file${loadedDailyCount === 1 ? "" : "s"}`);
+      if (loadedSnapshotCount) sourceSummary.push(`${loadedSnapshotCount} full snapshot${loadedSnapshotCount === 1 ? "" : "s"}`);
+      const sourceText = sourceSummary.length ? ` Source mix: ${sourceSummary.join(" plus ")}.` : "";
+      return {
+        ...history,
+        recentSnapshots: loadedSnapshotCount,
+        dailyRecordsLoaded: loadedDailyCount,
+        note: history.serviceDays >= 3
+          ? `Rolling baseline available from ${history.serviceDays} observed service day${history.serviceDays === 1 ? "" : "s"}. Matching uses day of week including weekends, ignores repeat refreshes of the same flight, and now merges daily history with archived full snapshots so older data stays visible.${sourceText}`
+          : `History is building. ${history.serviceDays} observed service day${history.serviceDays === 1 ? "" : "s"} captured so far.${sourceText}`
+      };
     } catch (error) {
       return { enabled: true, recentSnapshots: 0, serviceDays: 0, note: error?.message || "Rolling baseline could not be loaded.", rollingByRouteWeekday: {}, timelineMeta: { airlineDaily: [], airlineWeekly: [] } };
     }

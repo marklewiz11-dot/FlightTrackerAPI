@@ -14,14 +14,14 @@ let state = {
   timezoneMode: "PKT",
   mode: "normal",
   modeMeta: { key: "normal", label: "Normal mode", note: "Normal mode uses a live FlightAware pull behind an 8 hour shared cache. The first refresh after expiry updates the shared dataset and saves history.", pageDepthByAirport: { ISB: 6, LHE: 3, KHI: 3 }, dataSource: "live" },
-  cacheSeconds: DEFAULT_CACHE_SECONDS,
-  cacheRemaining: DEFAULT_CACHE_SECONDS,
+  cacheSeconds: 8 * 60 * 60,
+  cacheRemaining: 8 * 60 * 60,
   refreshPaused: false,
   activeTab: "flights",
   datasetGeneratedAtMs: null,
   lastLoadFailed: false,
   loadFactor: 85,
-  scopeLabel: "Islamabad default",
+  scopeLabel: "All airports",
   snapshotMeta: { enabled: false, saved: false, note: "Snapshot saving not configured.", recentCount: null },
   historyChartGranularity: "day",
   historyChartAirport: "ISB"
@@ -313,7 +313,6 @@ function fillSelect(id, items, includeAll = true) {
 function baseClientFilteredRows() {
   if (!state.raw) return [];
   let rows = safeArray(state.raw.flights || []);
-  if (state.airport !== "ALL") rows = rows.filter((r) => String(r.airportCode || r.origin || "").toUpperCase() === state.airport);
   if (!state.includeMinor) rows = rows.filter((r) => r.isMajor);
   return rows;
 }
@@ -369,11 +368,7 @@ function getTrackedEarlyWarningRows() {
 }
 
 function getCoverageSummary(filteredOutboundRows) {
-  const allCoverage = state.raw?.coverageMeta?.departures;
-  const scopedCoverage = state.airport !== "ALL"
-    ? state.raw?.coverageMeta?.byAirport?.[state.airport]?.departures
-    : allCoverage;
-  const coverage = scopedCoverage || allCoverage;
+  const coverage = state.raw?.coverageMeta?.departures;
   const shownCount = filteredOutboundRows.length;
   if (!coverage) {
     return { label: "Unknown", cls: "signalMedium", detail: `${shownCount} tracked departure row${shownCount === 1 ? "" : "s"} shown in the selected window.` };
@@ -731,6 +726,7 @@ function renderHistoryChart() {
   meta.textContent = `Tracked airline scheduled departures by ${chart.granularity === "week" ? "week" : "service day"} for ${PAKISTAN_AIRPORT_NAMES[chart.airportKey] || chart.airportKey}. ${state.raw?.historyMeta?.note || ""}`.trim();
 }
 
+
 function renderDisruptionFeed(rows) {
   const el = document.getElementById("disruptionFeed");
   const disruptions = [...rows].filter(isDisrupted).sort((a, b) => {
@@ -771,7 +767,7 @@ function renderEarlyWarning() {
   if (metaEl) {
     const dailyLoaded = Number(state.raw?.historyMeta?.dailyRecordsLoaded || 0);
     const snapshotSummary = state.snapshotMeta.saved
-      ? `Latest fresh refresh saved. Full snapshots retained: ${state.snapshotMeta.recentCount ?? "—"}${dailyLoaded ? `. Service day files loaded: ${dailyLoaded}.` : "."}`
+      ? `Latest refresh saved. Full snapshots retained: ${state.snapshotMeta.recentCount ?? "—"}${dailyLoaded ? `. Service day files loaded: ${dailyLoaded}.` : "."}`
       : (state.snapshotMeta.note || "Snapshot collection not active.");
     metaEl.innerHTML = `<span class="earlyWarningMetaPill ${model.coverage.cls}">${escapeHtml(model.coverage.label)}</span><span>${escapeHtml(model.coverage.detail)}</span><span>•</span><span>${escapeHtml(snapshotSummary)}</span>`;
   }
@@ -849,43 +845,40 @@ function renderCacheWarning() {
   bar.className = `cacheWarningBar ${severity === "danger" ? "danger" : "warning"}`;
 }
 
-function renderModeUi() {
-  document.querySelectorAll(".modeBtn").forEach((btn) => btn.classList.toggle("active", btn.dataset.mode === state.mode));
-}
-
 function renderCacheMeta() {
   const ageEl = document.getElementById("cacheAgeInfo");
   const cycleEl = document.getElementById("cacheCycleInfo");
   if (ageEl) ageEl.textContent = `Data age ${Math.floor(getDataAgeSeconds() / 60)}m`;
   if (cycleEl) cycleEl.textContent = state.mode === "crisis"
     ? `Crisis live ${Math.round((state.cacheSeconds || DEFAULT_CACHE_SECONDS) / 60)}m cache`
-    : `Normal live ${Math.round((state.cacheSeconds || DEFAULT_CACHE_SECONDS) / 3600)}h shared cache`;
-  renderModeUi();
+    : `Normal live ${Math.round((state.cacheSeconds || DEFAULT_CACHE_SECONDS) / 3600)}h cache`;
+  document.querySelectorAll('.modeBtn').forEach((btn) => btn.classList.toggle('active', btn.dataset.mode === state.mode));
 }
 
 function buildInstructions() {
+  const depth = state.modeMeta?.pageDepthByAirport || { ISB: 6, LHE: 3, KHI: 3 };
   return `
     <p><strong>What this dashboard shows</strong></p>
     <ul>
-      <li>This board opens on <strong>All airports</strong> and the <strong>All</strong> day window so you can immediately see the wider Pakistan picture.</li>
+      <li>This board gives a live operational view of Pakistan related commercial flights with All airports as the default scope.</li>
       <li>The purpose is to spot disruption quickly and give an early warning when practical outbound options to key hubs are starting to thin out.</li>
     </ul>
 
-    <p><strong>How the data model now works</strong></p>
+    <p><strong>How the data modes work</strong></p>
     <ul>
-      <li><strong>Normal mode</strong> uses a live FlightAware pull behind an <strong>8 hour shared cache</strong>. The first viewer after cache expiry refreshes the shared dataset, saves history, and everyone else sees that same shared result until the next expiry.</li>
-      <li><strong>If nobody opens the board, nothing is pulled.</strong> That keeps cost lower outside crisis while still saving a fresh history point whenever a real shared refresh happens.</li>
-      <li><strong>Crisis mode</strong> uses a live FlightAware pull with a <strong>1 hour shared cache</strong> and deeper page depth. It costs materially more, which is why the board shows a warning before entering it.</li>
+      <li><strong>Normal mode</strong> uses a live FlightAware pull behind an <strong>8 hour shared cache</strong>. The first refresh after cache expiry updates the shared dataset and saves history.</li>
+      <li><strong>Crisis mode</strong> uses a live FlightAware pull behind a <strong>1 hour shared cache</strong> with materially deeper page depth and a cost warning before entry.</li>
+      <li>Snapshots are still saved on fresh shared refreshes, so the line graph and rolling baseline continue to build over time.</li>
     </ul>
 
     <p><strong>How to use it</strong></p>
     <ul>
-      <li><strong>Flights</strong> shows the visible rows for the current scope and filters.</li>
+      <li><strong>Flights</strong> shows the live flight rows for the current scope.</li>
       <li><strong>Early Warning</strong> compares current usable outbound departures against a checked baseline for the same selected day window, using like for like logic in the summary cards.</li>
       <li><strong>Airlines</strong> groups the visible rows by carrier.</li>
       <li><strong>Airports</strong> shows a quick airport and hub overview.</li>
-      <li><strong>Day</strong> switches between today, tomorrow, and all flights in the current window.</li>
-      <li><strong>Airport</strong> filters the board between Islamabad, Lahore, Karachi, or All airports. In Normal mode this is a local filter on the shared All airports dataset. In Crisis mode it triggers a live scoped pull.</li>
+      <li><strong>Day</strong> switches between today, tomorrow, and all flights in the shared cached window. The board now opens on <strong>All</strong>.</li>
+      <li><strong>Airport</strong> filters between Islamabad, Lahore, Karachi, or All airports. The board now opens on <strong>All airports</strong>.</li>
       <li><strong>Data mode</strong> switches between lower cost Normal monitoring and live Crisis monitoring.</li>
       <li><strong>PKT / UK</strong> switches the displayed time reference for the board.</li>
       <li><strong>Load factor</strong> changes only the passenger estimate, not the flight status or timings.</li>
@@ -896,9 +889,10 @@ function buildInstructions() {
       <li>The Early Warning view focuses on practical outbound hub options rather than every flight equally.</li>
       <li><strong>From</strong> shows which Pakistan airport the route leaves from.</li>
       <li><strong>Usable</strong> means a departure that is not cancelled, not diverted, and not delayed more than 60 minutes.</li>
-      <li><strong>Normal expected in window</strong> shows where the expected count came from for each row, whether published slots, rolling history, or checked weekly fallback.</li>
-      <li>The coverage line still matters. If the source signalled more pages than were pulled, current scheduled counts may still be understated even when the baseline is correct.</li>
-      <li>The history chart is split by airport tab so it stays readable. Use the Islamabad, Lahore, and Karachi buttons with Day or Week views to compare tracked airlines including Thai where history exists.</li>
+      <li><strong>Normal expected in window</strong> uses checked route logic. Each row states whether that expected count came from published slots, rolling history, or weekly fallback.</li>
+      <li>The history chart is split by airport tab so it stays readable. Use Islamabad, Lahore, and Karachi with Day or Week views to compare tracked airlines including Thai where history exists.</li>
+      <li>The coverage card matters. If the source signalled more pages than were pulled, current scheduled counts may still be understated.</li>
+      <li>Current page depth in ${state.mode === "crisis" ? "Crisis" : "Normal"} mode is ISB ${depth.ISB}, LHE ${depth.LHE}, KHI ${depth.KHI} per scheduled arrivals request and the same again per scheduled departures request.</li>
     </ul>
   `;
 }
@@ -918,15 +912,11 @@ function buildBriefReadout() {
   const delayedPax = delayed.reduce((sum, f) => sum + estimatePax(f), 0);
   const divertedPax = diverted.reduce((sum, f) => sum + estimatePax(f), 0);
   const warning = getEarlyWarningModel();
-  const sourceText = state.mode === "normal"
-    ? "live shared Normal dataset"
-    : "fresh live crisis pull";
   return `
     <p><strong>Current scope:</strong> ${escapeHtml(state.scopeLabel)}.</p>
-    <p><strong>Data mode:</strong> ${escapeHtml(state.modeMeta?.label || state.mode)} using the ${escapeHtml(sourceText)}.</p>
     <p><strong>Current filtered board:</strong> ${rows.length} flights.</p>
     <p><strong>Data age:</strong> ${Math.floor(getDataAgeSeconds() / 60)} minutes.</p>
-    <p><strong>Early warning signal:</strong> ${warning.signal}. Usable tracked departures in the selected window: ${warning.baseline.usableTotal}. Normal expected in the same window: ${warning.baseline.expectedTotal.toFixed(1)}. Coverage: ${warning.coverage.label}. ${warning.coverage.detail}</p>
+    <p><strong>Early warning signal:</strong> ${warning.signal}. Usable key hub departures in next 12 hours: ${warning.upcoming12.length}. Estimated usable PAX in next 12 hours: ~${formatNumber(warning.usablePax12)}. Coverage: ${warning.coverage.label}. ${warning.coverage.detail}</p>
     <p><strong>Disruption picture:</strong> ${cancelled.length} cancelled, ${diverted.length} diverted, ${delayed.length} delayed over 60 minutes.</p>
     <p><strong>Estimated affected passengers:</strong> ~${formatNumber(cancelledPax)} cancelled PAX, ~${formatNumber(divertedPax)} diverted PAX, ~${formatNumber(delayedPax)} delayed PAX.</p>
     <p><strong>Most severe rows:</strong></p>
@@ -1001,19 +991,12 @@ function startCacheTimer() {
 
 async function load(isBackground = false) {
   try {
-    const requestAirport = state.mode === "normal" ? "ALL" : state.airport;
-    const res = await fetch(`/api/flights?airport=${encodeURIComponent(requestAirport)}&mode=${encodeURIComponent(state.mode)}`);
-    const text = await res.text();
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      throw new Error(text || "Failed to load board data.");
-    }
+    const res = await fetch(`/api/flights?airport=${encodeURIComponent(state.airport)}&mode=${encodeURIComponent(state.mode)}`);
+    const data = await res.json();
     if (!res.ok) throw new Error(data?.warnings?.[0] || "Failed to load board data.");
     state.raw = data;
     state.cacheSeconds = Number(data.cacheSeconds || DEFAULT_CACHE_SECONDS);
-    state.scopeLabel = data.scopeLabel || "Islamabad default";
+    state.scopeLabel = data.scopeLabel || "All airports";
     state.snapshotMeta = data.snapshotMeta || state.snapshotMeta;
     state.modeMeta = data.modeMeta || state.modeMeta;
     state.mode = data.modeMeta?.key || state.mode;
@@ -1118,11 +1101,8 @@ document.addEventListener("click", async (e) => {
   if (modeBtn) {
     const nextMode = modeBtn.dataset.mode;
     if (nextMode === state.mode) return;
-    if (nextMode === "crisis") {
-      openCrisisConfirm();
-    } else {
-      await switchMode("normal");
-    }
+    if (nextMode === "crisis") openCrisisConfirm();
+    else await switchMode("normal");
     return;
   }
   const historyBtn = e.target.closest("#historyDayBtn, #historyWeekBtn");
@@ -1138,18 +1118,11 @@ document.addEventListener("click", async (e) => {
     return;
   }
   const tabBtn = e.target.closest(".tab[data-tab]");
-  if (tabBtn) {
-    setActiveTab(tabBtn.dataset.tab);
-  }
+  if (tabBtn) setActiveTab(tabBtn.dataset.tab);
 });
 
 document.getElementById("directionFilter").addEventListener("change", (e) => { state.direction = e.target.value; refreshView(); });
-document.getElementById("airportFilter").addEventListener("change", async (e) => {
-  state.airport = e.target.value;
-  state.airline = "All";
-  if (state.mode === "normal") refreshView();
-  else await load(false);
-});
+document.getElementById("airportFilter").addEventListener("change", async (e) => { state.airport = e.target.value; state.airline = "All"; await load(false); });
 document.getElementById("airlineFilter").addEventListener("change", (e) => { state.airline = e.target.value; refreshView(); });
 document.getElementById("statusFilter").addEventListener("change", (e) => { state.status = e.target.value; refreshView(); });
 document.getElementById("minorCarrierToggle").addEventListener("change", (e) => { state.includeMinor = e.target.checked; state.airline = "All"; refreshView(); });
@@ -1168,8 +1141,7 @@ document.getElementById("resetFilters").addEventListener("click", async () => {
   state.historyChartAirport = "ISB";
   document.querySelectorAll(".seg[data-day]").forEach((x) => x.classList.toggle("active", x.dataset.day === "all"));
   document.getElementById("loadFactorSlider").value = "85";
-  if (state.mode === "normal") refreshView();
-  else await load(false);
+  await load(false);
 });
 
 document.getElementById("instructionsBtn").addEventListener("click", openInstructions);

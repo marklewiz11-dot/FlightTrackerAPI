@@ -658,8 +658,28 @@ function getHistorySeriesForChart(granularity = state.historyChartGranularity ||
 
 function formatHistoryChartLabel(label, granularity) {
   if (!label) return "";
-  if (granularity === "week") return `Week of ${label}`;
-  return label;
+  const date = new Date(`${label}T00:00:00+05:00`);
+  if (Number.isNaN(date.getTime())) return label;
+  const short = date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "Asia/Karachi" });
+  return granularity === "week" ? `W/C ${short}` : short;
+}
+
+function buildSmoothHistoryPath(points) {
+  if (!points.length) return "";
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const p0 = points[i - 1] || points[i];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2] || p2;
+    const cp1x = p1.x + (p2.x - p0.x) / 6;
+    const cp1y = p1.y + (p2.y - p0.y) / 6;
+    const cp2x = p2.x - (p3.x - p1.x) / 6;
+    const cp2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+  }
+  return d;
 }
 
 function renderHistoryChart() {
@@ -672,28 +692,33 @@ function renderHistoryChart() {
     meta.textContent = state.raw?.historyMeta?.note || "History is still building.";
     return;
   }
-  const width = 900;
-  const height = 280;
-  const padLeft = 44;
-  const padRight = 20;
-  const padTop = 16;
-  const padBottom = 34;
+  const width = 940;
+  const height = 324;
+  const padLeft = 52;
+  const padRight = 24;
+  const padTop = 20;
+  const padBottom = 48;
   const plotWidth = width - padLeft - padRight;
   const plotHeight = height - padTop - padBottom;
   const maxValue = Math.max(1, ...chart.datasets.flatMap((set) => set.values));
+  const gridStep = Math.max(1, Math.ceil(maxValue / 4));
+  const gridValues = [...new Set([0, gridStep, gridStep * 2, gridStep * 3, maxValue].filter((v) => v <= maxValue))].sort((a, b) => a - b);
   const xForIndex = (idx) => chart.labels.length === 1 ? padLeft + plotWidth / 2 : padLeft + (idx * plotWidth / (chart.labels.length - 1));
   const yForValue = (val) => padTop + plotHeight - (val / maxValue) * plotHeight;
-  const gridValues = [...new Set([0, Math.ceil(maxValue / 2), maxValue])].sort((a, b) => a - b);
+  const baseY = padTop + plotHeight;
+  const defs = chart.datasets.map((set, idx) => `<linearGradient id="historyGrad${idx}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" class="historyGradStop historyGradStopTop series${idx % 6}"/><stop offset="100%" class="historyGradStop historyGradStopBottom series${idx % 6}"/></linearGradient>`).join('');
+  const gridMarkup = gridValues.map((val) => `<g class="historyGrid"><line x1="${padLeft}" y1="${yForValue(val)}" x2="${width - padRight}" y2="${yForValue(val)}"></line><text x="${padLeft - 10}" y="${yForValue(val) + 4}" text-anchor="end">${val}</text></g>`).join('');
+  const verticalGuides = chart.labels.map((_, idx) => `<line class="historyVerticalGuide" x1="${xForIndex(idx)}" y1="${padTop}" x2="${xForIndex(idx)}" y2="${baseY}"></line>`).join('');
   const seriesMarkup = chart.datasets.map((set, idx) => {
-    const pts = set.values.map((val, i) => `${xForIndex(i)},${yForValue(val)}`).join(' ');
-    const dash = idx % 2 === 1 ? '6 4' : '0';
-    const pointDots = set.values.map((val, i) => `<circle cx="${xForIndex(i)}" cy="${yForValue(val)}" r="3"></circle>`).join('');
-    return `<g class="historySeries series${idx % 6}"><polyline points="${pts}" fill="none" stroke-dasharray="${dash}"></polyline>${pointDots}</g>`;
+    const points = set.values.map((val, i) => ({ x: xForIndex(i), y: yForValue(val), value: val }));
+    const linePath = buildSmoothHistoryPath(points);
+    const areaPath = `${linePath} L ${points[points.length - 1].x} ${baseY} L ${points[0].x} ${baseY} Z`;
+    const pointDots = points.map((pt, pointIdx) => `<circle class="historyPoint${pointIdx === points.length - 1 ? ' historyPointLast' : ''}" cx="${pt.x}" cy="${pt.y}" r="${pointIdx === points.length - 1 ? 4.2 : 3.2}"></circle>`).join('');
+    return `<g class="historySeries series${idx % 6}"><path class="historyArea series${idx % 6}" d="${areaPath}" fill="url(#historyGrad${idx})"></path><path class="historyLine ${set.values.length > 4 ? '' : 'historyLineNoDash'}" d="${linePath}"></path>${pointDots}</g>`;
   }).join('');
-  const gridMarkup = gridValues.map((val) => `<g class="historyGrid"><line x1="${padLeft}" y1="${yForValue(val)}" x2="${width - padRight}" y2="${yForValue(val)}"></line><text x="${padLeft - 8}" y="${yForValue(val) + 4}" text-anchor="end">${val}</text></g>`).join('');
-  const xLabels = chart.labels.map((label, idx) => `<text class="historyAxisLabel" x="${xForIndex(idx)}" y="${height - 10}" text-anchor="middle">${escapeHtml(label.slice(5))}</text>`).join('');
-  const legend = chart.datasets.map((set, idx) => `<span class="historyLegendItem"><span class="historyLegendLine series${idx % 6}"></span>${escapeHtml(set.name)}</span>`).join('');
-  wrap.innerHTML = `<svg viewBox="0 0 ${width} ${height}" class="historySvg" role="img" aria-label="Tracked airline history chart"><rect x="0" y="0" width="${width}" height="${height}" rx="10" ry="10"></rect>${gridMarkup}<line class="historyAxis" x1="${padLeft}" y1="${padTop}" x2="${padLeft}" y2="${padTop + plotHeight}"></line><line class="historyAxis" x1="${padLeft}" y1="${padTop + plotHeight}" x2="${width - padRight}" y2="${padTop + plotHeight}"></line>${seriesMarkup}${xLabels}</svg><div class="historyLegend">${legend}</div>`;
+  const xLabels = chart.labels.map((label, idx) => `<text class="historyAxisLabel" x="${xForIndex(idx)}" y="${height - 14}" text-anchor="middle">${escapeHtml(formatHistoryChartLabel(label, chart.granularity))}</text>`).join('');
+  const legend = chart.datasets.map((set, idx) => `<span class="historyLegendItem"><span class="historyLegendSwatch series${idx % 6}"></span><span class="historyLegendText">${escapeHtml(set.name)}</span></span>`).join('');
+  wrap.innerHTML = `<div class="historyChartShell"><svg viewBox="0 0 ${width} ${height}" class="historySvg" role="img" aria-label="Tracked airline history chart"><defs>${defs}</defs><rect class="historyFrame" x="0" y="0" width="${width}" height="${height}" rx="16" ry="16"></rect>${verticalGuides}${gridMarkup}<line class="historyAxis" x1="${padLeft}" y1="${padTop}" x2="${padLeft}" y2="${baseY}"></line><line class="historyAxis" x1="${padLeft}" y1="${baseY}" x2="${width - padRight}" y2="${baseY}"></line>${seriesMarkup}${xLabels}</svg><div class="historyLegend">${legend}</div></div>`;
   const scopeText = state.airport === "ALL" ? "all airports" : (PAKISTAN_AIRPORT_NAMES[state.airport] || state.airport);
   meta.textContent = `Tracked airline scheduled departures by ${chart.granularity === "week" ? "week" : "service day"} for ${scopeText}. ${state.raw?.historyMeta?.note || ""}`.trim();
 }
@@ -735,8 +760,9 @@ function renderEarlyWarning() {
     <div class="warningCard"><div class="warningCardLabel">Normal expected in window</div><div class="warningCardValue">${model.baseline.expectedTotal.toFixed(1)}</div><div class="warningCardSub">Each row below shows whether that expected count came from published slots, rolling history or weekly fallback.</div></div>`;
 
   if (metaEl) {
+    const dailyLoaded = Number(state.raw?.historyMeta?.dailyRecordsLoaded || 0);
     const snapshotSummary = state.snapshotMeta.saved
-      ? `Latest refresh saved. Snapshot count: ${state.snapshotMeta.recentCount ?? "—"}.`
+      ? `Latest refresh saved. Full snapshots retained: ${state.snapshotMeta.recentCount ?? "—"}${dailyLoaded ? `. Service day files loaded: ${dailyLoaded}.` : "."}`
       : (state.snapshotMeta.note || "Snapshot collection not active.");
     metaEl.innerHTML = `<span class="earlyWarningMetaPill ${model.coverage.cls}">${escapeHtml(model.coverage.label)}</span><span>${escapeHtml(model.coverage.detail)}</span><span>•</span><span>${escapeHtml(snapshotSummary)}</span>`;
   }
@@ -776,9 +802,13 @@ function renderEarlyWarning() {
 
   const historyNote = state.raw?.historyMeta?.note ? `<br><span class="tableSubMeta">${escapeHtml(state.raw.historyMeta.note)}</span>` : "";
   const dailyPaths = Array.isArray(state.snapshotMeta.dailyPathnames) && state.snapshotMeta.dailyPathnames.length
-    ? `<br><span class="tableSubMeta">Updated daily history: ${escapeHtml(state.snapshotMeta.dailyPathnames.join(", "))}</span>`
+    ? `<br><span class="tableSubMeta">Updated service day files: ${escapeHtml(state.snapshotMeta.dailyPathnames.join(", "))}</span>`
     : "";
-  snapshotEl.innerHTML = `${escapeHtml(state.snapshotMeta.note || "Snapshot saving has not been configured yet.")}${state.snapshotMeta.pathname ? `<br><span class="tableSubMeta">Latest snapshot: ${escapeHtml(state.snapshotMeta.pathname)}</span>` : ""}${dailyPaths}${historyNote}`;
+  const loadedDaily = Number(state.raw?.historyMeta?.dailyRecordsLoaded || 0);
+  const sourceMix = (loadedDaily || Number(state.raw?.historyMeta?.recentSnapshots || 0))
+    ? `<br><span class="tableSubMeta">History currently loaded from ${loadedDaily} service day file${loadedDaily === 1 ? "" : "s"} and ${Number(state.raw?.historyMeta?.recentSnapshots || 0)} full snapshot${Number(state.raw?.historyMeta?.recentSnapshots || 0) === 1 ? "" : "s"}.</span>`
+    : "";
+  snapshotEl.innerHTML = `${escapeHtml(state.snapshotMeta.note || "Snapshot saving has not been configured yet.")}${state.snapshotMeta.pathname ? `<br><span class="tableSubMeta">Latest snapshot: ${escapeHtml(state.snapshotMeta.pathname)}</span>` : ""}${dailyPaths}${sourceMix}${historyNote}`;
   renderHistoryChart();
 }
 

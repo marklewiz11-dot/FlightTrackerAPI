@@ -301,7 +301,6 @@
     </div>
   </div>
 
-  <script src="/app.js"></script>
   <div class="modal hidden" id="crisisConfirmModal">
     <div class="modalCard">
       <div class="modalHead">
@@ -309,8 +308,8 @@
         <button class="closeBtn" id="closeCrisisConfirmBtn">Close</button>
       </div>
       <div class="briefingBody" id="crisisConfirmBody">
-        <p><strong>Crisis mode uses live FlightAware pulls, deeper page depth, and a 1 hour cache, so it costs materially more than Normal mode.</strong></p>
-        <p>Normal mode stays on an 8 hour shared cache. Close this warning to stay in Normal, or continue only when you need higher frequency live monitoring.</p>
+        <p><strong>Crisis mode uses a live FlightAware pull, deeper page depth, and a 1 hour cache, so it costs materially more than Normal mode.</strong></p>
+        <p>Normal mode stays on a live pull too, but behind an 8 hour shared cache for lower cost day to day monitoring.</p>
         <div class="modalActions">
           <button class="topbarBtn" id="cancelCrisisBtn">Close and stay in Normal</button>
           <button class="topbarBtn topbarBtnWarning" id="confirmCrisisBtn">Enter Crisis mode</button>
@@ -318,5 +317,7 @@
       </div>
     </div>
   </div>
+
+  <script src="/app.js"></script>
 </body>
 </html>

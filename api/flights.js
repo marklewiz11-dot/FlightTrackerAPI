@@ -1,5 +1,5 @@
 export default async function handler(req, res) {
-  const apiKey = "hn1UO6XF9P3DrZPwMPi5ABgWXEV3wrvF";
+  const apiKey = "PASTE_YOUR_FLIGHTAWARE_KEY_HERE";
   const base = "https://aeroapi.flightaware.com/aeroapi";
   const DEFAULT_CACHE_SECONDS = 3600;
   const BROWSER_CACHE_SECONDS = 0;
@@ -10,15 +10,13 @@ export default async function handler(req, res) {
       label: "Normal mode",
       cacheSeconds: 8 * 60 * 60,
       pageLimits: { OPIS: 6, OPLA: 3, OPKC: 3 },
-      collectorPageLimits: { OPIS: 6, OPLA: 3, OPKC: 3 },
-      note: "8 hour shared cache with deeper collection pages for low cost baseline building."
+      note: "8 hour shared cache with deeper pages for lower cost day to day monitoring. The first refresh after cache expiry updates the shared dataset and saves history."
     },
     crisis: {
       key: "crisis",
       label: "Crisis mode",
       cacheSeconds: 60 * 60,
       pageLimits: { OPIS: 12, OPLA: 6, OPKC: 6 },
-      collectorPageLimits: { OPIS: 12, OPLA: 6, OPKC: 6 },
       note: "1 hour shared cache with materially deeper pages for crisis monitoring."
     }
   };
@@ -373,9 +371,9 @@ export default async function handler(req, res) {
     };
   }
 
-  function resolveScope(scopeParam, mode, useCollectorDepth = false) {
-    const scope = String(scopeParam || "ISB").toUpperCase();
-    const limits = useCollectorDepth ? mode.collectorPageLimits : mode.pageLimits;
+  function resolveScope(scopeParam, mode) {
+    const scope = String(scopeParam || "ALL").toUpperCase();
+    const limits = mode.pageLimits;
     if (scope === "LHE") return { key: "LHE", airportIds: ["OPLA"], pageLimitMap: { OPLA: limits.OPLA }, label: "Lahore on demand" };
     if (scope === "KHI") return { key: "KHI", airportIds: ["OPKC"], pageLimitMap: { OPKC: limits.OPKC }, label: "Karachi on demand" };
     if (scope === "ALL") return { key: "ALL", airportIds: ["OPIS", "OPLA", "OPKC"], pageLimitMap: { OPIS: limits.OPIS, OPLA: limits.OPLA, OPKC: limits.OPKC }, label: "All airports" };
@@ -539,32 +537,10 @@ export default async function handler(req, res) {
       }));
   }
 
-  function isCollectorRequest() {
-    return String(req.query?.collect || "0") === "1" || Boolean(req.headers["x-vercel-cron"]);
-  }
-
-  function isCollectorAuthorised() {
-    if (!isCollectorRequest()) return true;
-    if (req.headers["x-vercel-cron"]) return true;
-    const requiredSecret = process.env.COLLECT_SECRET;
-    if (!requiredSecret) return true;
-    const providedSecret = String(req.query?.secret || req.headers["x-collect-secret"] || "");
-    return providedSecret === requiredSecret;
-  }
-
-  async function saveSnapshot(scope, summary, dailyRecords, collectionMeta) {
+  async function saveSnapshot(scope, summary, dailyRecords) {
     const tokenPresent = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
     if (!tokenPresent) {
       return { enabled: false, saved: false, note: "Snapshot saving is ready but not active. Add a private Vercel Blob store and BLOB_READ_WRITE_TOKEN to start collecting history.", recentCount: null, dailyPathnames: [] };
-    }
-    if (!collectionMeta?.collectRequested) {
-      return {
-        enabled: true,
-        saved: false,
-        recentCount: null,
-        dailyPathnames: [],
-        note: "History collection is collector driven in this build. This dashboard refresh did not write a new snapshot. Use the collector URL on your schedule instead."
-      };
     }
     try {
       const sdk = await import("@vercel/blob");
@@ -602,54 +578,13 @@ export default async function handler(req, res) {
       return {
         enabled: true,
         saved: true,
-        note: `Collector run saved a full snapshot and refreshed slimmer service day files for ${collectionMeta.modeLabel}.`,
+        note: "This fresh shared refresh saved a full snapshot and updated slimmer service day files. Cached views inside the shared window reuse this saved refresh rather than writing another record.",
         recentCount,
         pathname,
         dailyPathnames
       };
     } catch (error) {
       return { enabled: true, saved: false, note: error?.message || "Snapshot save failed.", recentCount: null, dailyPathnames: [] };
-    }
-  }
-
-
-  async function saveLatestBoardData(scope, payload, collectionMeta) {
-    const tokenPresent = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
-    if (!tokenPresent || !collectionMeta?.collectRequested) {
-      return { saved: false, pathname: null };
-    }
-    try {
-      const sdk = await import("@vercel/blob");
-      if (!sdk?.put) return { saved: false, pathname: null };
-      const pathname = `latest/flight-tracker/${scope.key}/${collectionMeta.modeKey}.json`;
-      await sdk.put(pathname, JSON.stringify(payload, null, 2), {
-        access: "private",
-        addRandomSuffix: false,
-        allowOverwrite: true,
-        contentType: "application/json",
-        cacheControlMaxAge: 60
-      });
-      return { saved: true, pathname };
-    } catch {
-      return { saved: false, pathname: null };
-    }
-  }
-
-  async function loadLatestBoardData(modeKey = "normal") {
-    const tokenPresent = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
-    if (!tokenPresent) return null;
-    try {
-      const sdk = await import("@vercel/blob");
-      if (!sdk?.get) return null;
-      const pathname = `latest/flight-tracker/ALL/${modeKey}.json`;
-      const result = await sdk.get(pathname, { access: "private" });
-      if (!result || result.statusCode !== 200) return null;
-      const text = await new Response(result.stream).text();
-      const parsed = JSON.parse(text);
-      parsed.latestBoardPath = pathname;
-      return parsed;
-    } catch {
-      return null;
     }
   }
 
@@ -857,59 +792,10 @@ export default async function handler(req, res) {
   try {
     const generatedAt = new Date().toISOString();
     const mode = resolveMode(req.query?.mode);
-    const collectRequested = isCollectorRequest();
-    if (collectRequested && !isCollectorAuthorised()) {
-      return sendJson(401, {
-        generatedAt,
-        cacheSeconds: mode.cacheSeconds,
-        modeMeta: { key: mode.key, label: mode.label, note: mode.note, pageDepthByAirport: mode.pageDepthByAirport, collectRequested: true },
-        snapshotMeta: { enabled: false, saved: false, note: "Collector request blocked because the provided COLLECT_SECRET did not match.", recentCount: null, dailyPathnames: [] },
-        coverageMeta: { departures: { truncatedPossible: false, returnedCount: 0, note: "Coverage unavailable because the collector request was not authorised." }, arrivals: { truncatedPossible: false, returnedCount: 0, note: "Coverage unavailable because the collector request was not authorised." }, byAirport: {} },
-        historyMeta: { enabled: false, recentSnapshots: 0, serviceDays: 0, note: "Rolling baseline not loaded because the collector request was not authorised.", rollingByRouteWeekday: {}, timelineMeta: { airlineDaily: [], airlineWeekly: [] } },
-        filtersMeta: { airports: ["ISB", "LHE", "KHI", "ALL"], airlines: [], statuses: [], directions: [] },
-        flights: [],
-        warnings: ["Collector request not authorised."]
-      }, mode.cacheSeconds);
-    }
     const requestedScope = req.query?.airport || req.query?.scope || "ALL";
-
-    if (!collectRequested && mode.key === "normal") {
-      const savedBoard = await loadLatestBoardData(mode.key);
-      if (savedBoard) {
-        const savedScope = resolveScope("ALL", mode, false);
-        const historyMeta = await loadRollingHistory(savedScope);
-        return sendJson(200, {
-          ...savedBoard,
-          cacheSeconds: mode.cacheSeconds,
-          modeMeta: {
-            ...(savedBoard.modeMeta || {}),
-            key: mode.key,
-            label: mode.label,
-            note: "Normal mode serves the latest saved collector dataset by default. No fresh FlightAware pull was made for this board view.",
-            pageDepthByAirport: mode.pageDepthByAirport,
-            collectRequested: false,
-            dataSource: "saved",
-            collectorUrlHint: "/api/collect-normal",
-            crisisCollectorUrlHint: "/api/collect-crisis"
-          },
-          scope: "ALL",
-          scopeLabel: "All airports from latest saved collector dataset",
-          snapshotMeta: {
-            ...(savedBoard.snapshotMeta || {}),
-            note: "Showing the latest saved collector dataset. Normal mode does not make a fresh live FlightAware pull by default.",
-            latestBoardPath: savedBoard.latestBoardPath || savedBoard.snapshotMeta?.latestBoardPath || null
-          },
-          historyMeta,
-          warnings: Array.isArray(savedBoard.warnings) ? savedBoard.warnings : []
-        }, mode.cacheSeconds);
-      }
-    }
-
-    const fetchPlan = collectRequested
-      ? { includeArrivals: String(req.query?.includeArrivals || "0") === "1", includeDepartures: true }
-      : { includeArrivals: true, includeDepartures: true };
-    const effectiveScope = (!collectRequested && mode.key === "normal") ? "ALL" : requestedScope;
-    const scope = resolveScope(effectiveScope, mode, collectRequested);
+    const fetchPlan = { includeArrivals: true, includeDepartures: true };
+    const effectiveScope = mode.key === "normal" ? "ALL" : requestedScope;
+    const scope = resolveScope(effectiveScope, mode);
     const { start, end } = getBroadPakistanWindow();
     const { flights: dedupedFlights, coverageMeta } = await fetchWindowForAirports(scope.airportIds, start, end, scope.pageLimitMap, fetchPlan);
     dedupedFlights.sort((a, b) => {
@@ -920,12 +806,7 @@ export default async function handler(req, res) {
     const flightsWithPax = dedupedFlights.map((f) => ({ ...f, estimatedPax: 0 }));
     const snapshotSummary = buildSnapshotSummary(scope, flightsWithPax, generatedAt, coverageMeta);
     const dailyRecords = buildDailyHistoryRecords(scope, snapshotSummary);
-    const snapshotMeta = await saveSnapshot(scope, snapshotSummary, dailyRecords, {
-      collectRequested,
-      modeKey: mode.key,
-      modeLabel: mode.label,
-      fetchPlan
-    });
+    const snapshotMeta = await saveSnapshot(scope, snapshotSummary, dailyRecords);
     const historyMeta = await loadRollingHistory(scope);
     const responsePayload = {
       generatedAt,
@@ -933,13 +814,10 @@ export default async function handler(req, res) {
       modeMeta: {
         key: mode.key,
         label: mode.label,
-        note: collectRequested ? `${mode.note} Collector run writing the saved dataset for Normal or Crisis board views.` : mode.note,
+        note: mode.note,
         pageDepthByAirport: mode.pageDepthByAirport,
-        collectRequested,
         fetchPlan,
-        dataSource: collectRequested ? "collector-live" : "live",
-        collectorUrlHint: "/api/collect-normal",
-        crisisCollectorUrlHint: "/api/collect-crisis"
+        dataSource: "live"
       },
       scope: scope.key,
       scopeLabel: scope.label,
@@ -955,17 +833,6 @@ export default async function handler(req, res) {
       flights: dedupedFlights,
       warnings: []
     };
-    const latestBoardMeta = await saveLatestBoardData(scope, responsePayload, {
-      collectRequested,
-      modeKey: mode.key,
-      modeLabel: mode.label
-    });
-    if (latestBoardMeta?.pathname) {
-      responsePayload.snapshotMeta = {
-        ...responsePayload.snapshotMeta,
-        latestBoardPath: latestBoardMeta.pathname
-      };
-    }
     return sendJson(200, responsePayload, mode.cacheSeconds);
   } catch (error) {
     const generatedAt = new Date().toISOString();
@@ -973,7 +840,7 @@ export default async function handler(req, res) {
     return sendJson(500, {
       generatedAt,
       cacheSeconds: mode.cacheSeconds,
-      modeMeta: { key: mode.key, label: mode.label, note: mode.note, pageDepthByAirport: mode.pageDepthByAirport, collectRequested: isCollectorRequest() },
+      modeMeta: { key: mode.key, label: mode.label, note: mode.note, pageDepthByAirport: mode.pageDepthByAirport, dataSource: "live" },
       scope: "ALL",
       scopeLabel: "All airports",
       snapshotMeta: { enabled: false, saved: false, note: "Snapshot saving unavailable because the flight refresh failed.", recentCount: null, dailyPathnames: [] },

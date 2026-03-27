@@ -5,13 +5,15 @@ const KEY_HUBS = ["DOH", "DXB", "DWC", "AUH", "IST", "SAW", "JED", "RUH", "LHR",
 
 let state = {
   raw: null,
-  day: "today",
+  day: "all",
   direction: "Both",
-  airport: "ISB",
+  airport: "ALL",
   airline: "All",
   status: "All",
   includeMinor: false,
   timezoneMode: "PKT",
+  mode: "normal",
+  modeMeta: { key: "normal", label: "Normal mode", note: "Normal mode serves the latest saved collector dataset by default and avoids a fresh live pull.", pageDepthByAirport: { ISB: 6, LHE: 3, KHI: 3 }, dataSource: "saved" },
   cacheSeconds: DEFAULT_CACHE_SECONDS,
   cacheRemaining: DEFAULT_CACHE_SECONDS,
   refreshPaused: false,
@@ -21,7 +23,8 @@ let state = {
   loadFactor: 85,
   scopeLabel: "Islamabad default",
   snapshotMeta: { enabled: false, saved: false, note: "Snapshot saving not configured.", recentCount: null },
-  historyChartGranularity: "day"
+  historyChartGranularity: "day",
+  historyChartAirport: "ISB"
 };
 
 const AIRLINE_STATUS_LINKS = [
@@ -310,6 +313,7 @@ function fillSelect(id, items, includeAll = true) {
 function baseClientFilteredRows() {
   if (!state.raw) return [];
   let rows = safeArray(state.raw.flights || []);
+  if (state.airport !== "ALL") rows = rows.filter((r) => String(r.airportCode || r.origin || "").toUpperCase() === state.airport);
   if (!state.includeMinor) rows = rows.filter((r) => r.isMajor);
   return rows;
 }
@@ -365,7 +369,11 @@ function getTrackedEarlyWarningRows() {
 }
 
 function getCoverageSummary(filteredOutboundRows) {
-  const coverage = state.raw?.coverageMeta?.departures;
+  const allCoverage = state.raw?.coverageMeta?.departures;
+  const scopedCoverage = state.airport !== "ALL"
+    ? state.raw?.coverageMeta?.byAirport?.[state.airport]?.departures
+    : allCoverage;
+  const coverage = scopedCoverage || allCoverage;
   const shownCount = filteredOutboundRows.length;
   if (!coverage) {
     return { label: "Unknown", cls: "signalMedium", detail: `${shownCount} tracked departure row${shownCount === 1 ? "" : "s"} shown in the selected window.` };
@@ -633,27 +641,26 @@ function renderAirportCards(rows) {
 function getHistorySeriesForChart(granularity = state.historyChartGranularity || "day") {
   const timeline = state.raw?.historyMeta?.timelineMeta || {};
   const series = granularity === "week" ? safeArray(timeline.airlineWeekly || []) : safeArray(timeline.airlineDaily || []);
-  const trackedAirlines = new Set(getBaselineEntriesForScope().map((entry) => `${String(entry.origin || state.airport).toUpperCase()}|${String(entry.airline || '').toLowerCase()}`));
-  const filtered = series.filter((item) => {
-    const origin = String(item.origin || '').toUpperCase();
-    if (state.airport !== "ALL" && origin !== state.airport) return false;
-    const key = `${origin}|${String(item.airline || '').toLowerCase()}`;
-    return trackedAirlines.has(key);
-  });
+  const airportKey = state.historyChartAirport || "ISB";
+  const baselineEntries = PUBLISHED_SCHEDULE_BASELINE[airportKey] || [];
+  const trackedAirlines = new Set(baselineEntries.map((entry) => String(entry.airline || '').toLowerCase()));
+  const filtered = series.filter((item) => String(item.origin || '').toUpperCase() === airportKey && trackedAirlines.has(String(item.airline || '').toLowerCase()));
   const labelKey = granularity === "week" ? "weekStart" : "serviceDate";
   const labels = [...new Set(filtered.map((item) => item[labelKey]).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const grouped = new Map();
   for (const item of filtered) {
-    const name = state.airport === "ALL" ? `${item.origin} ${item.airline}` : item.airline;
-    if (!grouped.has(name)) grouped.set(name, { name, points: new Map(), total: 0 });
+    const name = item.airline;
+    if (!grouped.has(name)) grouped.set(name, { name, points: new Map(), total: 0, order: baselineEntries.findIndex((entry) => entry.airline === name) });
     grouped.get(name).points.set(item[labelKey], Number(item.scheduled || 0));
     grouped.get(name).total += Number(item.scheduled || 0);
   }
-  const datasets = [...grouped.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name)).slice(0, 8).map((group) => ({
-    name: group.name,
-    values: labels.map((label) => Number(group.points.get(label) || 0))
-  }));
-  return { labels, datasets, granularity };
+  const datasets = [...grouped.values()]
+    .sort((a, b) => (a.order - b.order) || b.total - a.total || a.name.localeCompare(b.name))
+    .map((group) => ({
+      name: group.name,
+      values: labels.map((label) => Number(group.points.get(label) || 0))
+    }));
+  return { labels, datasets, granularity, airportKey };
 }
 
 function formatHistoryChartLabel(label, granularity) {
@@ -688,16 +695,16 @@ function renderHistoryChart() {
   if (!wrap || !meta) return;
   const chart = getHistorySeriesForChart();
   if (!chart.labels.length || !chart.datasets.length) {
-    wrap.innerHTML = `<div class="emptyBlock">History chart will appear once enough snapshots have been saved for the selected scope.</div>`;
+    wrap.innerHTML = `<div class="emptyBlock">History chart will appear once enough snapshots have been saved for ${escapeHtml(PAKISTAN_AIRPORT_NAMES[state.historyChartAirport] || state.historyChartAirport)}.</div>`;
     meta.textContent = state.raw?.historyMeta?.note || "History is still building.";
     return;
   }
-  const width = 940;
-  const height = 324;
+  const width = 980;
+  const height = 340;
   const padLeft = 52;
-  const padRight = 24;
-  const padTop = 20;
-  const padBottom = 48;
+  const padRight = 20;
+  const padTop = 18;
+  const padBottom = 52;
   const plotWidth = width - padLeft - padRight;
   const plotHeight = height - padTop - padBottom;
   const maxValue = Math.max(1, ...chart.datasets.flatMap((set) => set.values));
@@ -706,7 +713,7 @@ function renderHistoryChart() {
   const xForIndex = (idx) => chart.labels.length === 1 ? padLeft + plotWidth / 2 : padLeft + (idx * plotWidth / (chart.labels.length - 1));
   const yForValue = (val) => padTop + plotHeight - (val / maxValue) * plotHeight;
   const baseY = padTop + plotHeight;
-  const defs = chart.datasets.map((set, idx) => `<linearGradient id="historyGrad${idx}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" class="historyGradStop historyGradStopTop series${idx % 6}"/><stop offset="100%" class="historyGradStop historyGradStopBottom series${idx % 6}"/></linearGradient>`).join('');
+  const defs = chart.datasets.map((set, idx) => `<linearGradient id="historyGrad${idx}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" class="historyGradStop historyGradStopTop series${idx % 7}"/><stop offset="100%" class="historyGradStop historyGradStopBottom series${idx % 7}"/></linearGradient>`).join('');
   const gridMarkup = gridValues.map((val) => `<g class="historyGrid"><line x1="${padLeft}" y1="${yForValue(val)}" x2="${width - padRight}" y2="${yForValue(val)}"></line><text x="${padLeft - 10}" y="${yForValue(val) + 4}" text-anchor="end">${val}</text></g>`).join('');
   const verticalGuides = chart.labels.map((_, idx) => `<line class="historyVerticalGuide" x1="${xForIndex(idx)}" y1="${padTop}" x2="${xForIndex(idx)}" y2="${baseY}"></line>`).join('');
   const seriesMarkup = chart.datasets.map((set, idx) => {
@@ -714,13 +721,14 @@ function renderHistoryChart() {
     const linePath = buildSmoothHistoryPath(points);
     const areaPath = `${linePath} L ${points[points.length - 1].x} ${baseY} L ${points[0].x} ${baseY} Z`;
     const pointDots = points.map((pt, pointIdx) => `<circle class="historyPoint${pointIdx === points.length - 1 ? ' historyPointLast' : ''}" cx="${pt.x}" cy="${pt.y}" r="${pointIdx === points.length - 1 ? 4.2 : 3.2}"></circle>`).join('');
-    return `<g class="historySeries series${idx % 6}"><path class="historyArea series${idx % 6}" d="${areaPath}" fill="url(#historyGrad${idx})"></path><path class="historyLine ${set.values.length > 4 ? '' : 'historyLineNoDash'}" d="${linePath}"></path>${pointDots}</g>`;
+    const final = points[points.length - 1];
+    const finalLabel = final ? `<text class="historyValueTag series${idx % 7}" x="${Math.min(width - 8, final.x + 8)}" y="${Math.max(16, final.y - 8)}">${set.values[set.values.length - 1]}</text>` : '';
+    return `<g class="historySeries series${idx % 7}"><path class="historyArea series${idx % 7}" d="${areaPath}" fill="url(#historyGrad${idx})"></path><path class="historyLine" d="${linePath}"></path>${pointDots}${finalLabel}</g>`;
   }).join('');
-  const xLabels = chart.labels.map((label, idx) => `<text class="historyAxisLabel" x="${xForIndex(idx)}" y="${height - 14}" text-anchor="middle">${escapeHtml(formatHistoryChartLabel(label, chart.granularity))}</text>`).join('');
-  const legend = chart.datasets.map((set, idx) => `<span class="historyLegendItem"><span class="historyLegendSwatch series${idx % 6}"></span><span class="historyLegendText">${escapeHtml(set.name)}</span></span>`).join('');
-  wrap.innerHTML = `<div class="historyChartShell"><svg viewBox="0 0 ${width} ${height}" class="historySvg" role="img" aria-label="Tracked airline history chart"><defs>${defs}</defs><rect class="historyFrame" x="0" y="0" width="${width}" height="${height}" rx="16" ry="16"></rect>${verticalGuides}${gridMarkup}<line class="historyAxis" x1="${padLeft}" y1="${padTop}" x2="${padLeft}" y2="${baseY}"></line><line class="historyAxis" x1="${padLeft}" y1="${baseY}" x2="${width - padRight}" y2="${baseY}"></line>${seriesMarkup}${xLabels}</svg><div class="historyLegend">${legend}</div></div>`;
-  const scopeText = state.airport === "ALL" ? "all airports" : (PAKISTAN_AIRPORT_NAMES[state.airport] || state.airport);
-  meta.textContent = `Tracked airline scheduled departures by ${chart.granularity === "week" ? "week" : "service day"} for ${scopeText}. ${state.raw?.historyMeta?.note || ""}`.trim();
+  const xLabels = chart.labels.map((label, idx) => `<text class="historyAxisLabel" x="${xForIndex(idx)}" y="${height - 16}" text-anchor="middle">${escapeHtml(formatHistoryChartLabel(label, chart.granularity))}</text>`).join('');
+  const legend = chart.datasets.map((set, idx) => `<span class="historyLegendItem"><span class="historyLegendSwatch series${idx % 7}"></span><span class="historyLegendText">${escapeHtml(set.name)}</span></span>`).join('');
+  wrap.innerHTML = `<div class="historyChartShell"><div class="historyChartTitleRow"><div><div class="historyChartEyebrow">Tracked airlines</div><div class="historyChartTitle">${escapeHtml(PAKISTAN_AIRPORT_NAMES[chart.airportKey] || chart.airportKey)} ${chart.granularity === "week" ? "weekly" : "service day"} trend</div></div><div class="historyChartBadge">Saved history</div></div><svg viewBox="0 0 ${width} ${height}" class="historySvg" role="img" aria-label="Tracked airline history chart"><defs>${defs}</defs><rect class="historyFrame" x="0" y="0" width="${width}" height="${height}" rx="18" ry="18"></rect>${verticalGuides}${gridMarkup}<line class="historyAxis" x1="${padLeft}" y1="${padTop}" x2="${padLeft}" y2="${baseY}"></line><line class="historyAxis" x1="${padLeft}" y1="${baseY}" x2="${width - padRight}" y2="${baseY}"></line>${seriesMarkup}${xLabels}</svg><div class="historyLegend">${legend}</div></div>`;
+  meta.textContent = `Tracked airline scheduled departures by ${chart.granularity === "week" ? "week" : "service day"} for ${PAKISTAN_AIRPORT_NAMES[chart.airportKey] || chart.airportKey}. ${state.raw?.historyMeta?.note || ""}`.trim();
 }
 
 function renderDisruptionFeed(rows) {
@@ -752,6 +760,7 @@ function renderEarlyWarning() {
   const model = getEarlyWarningModel();
   if (dayBtn) dayBtn.classList.toggle("active", state.historyChartGranularity !== "week");
   if (weekBtn) weekBtn.classList.toggle("active", state.historyChartGranularity === "week");
+  document.querySelectorAll(".historyAirportBtn").forEach((btn) => btn.classList.toggle("active", btn.dataset.historyAirport === state.historyChartAirport));
   const severityClass = model.severity === "high" ? "warningRiskHigh" : (model.severity === "medium" ? "warningRiskMedium" : "warningRiskLow");
   cardsEl.innerHTML = `
     <div class="warningCard ${severityClass}"><div class="warningCardLabel">Overall signal</div><div class="warningCardValue">${model.signal}</div><div class="warningCardSub">Based on usable tracked departures against the normal expected level for the same selected scope and day window.</div></div>
@@ -808,7 +817,8 @@ function renderEarlyWarning() {
   const sourceMix = (loadedDaily || Number(state.raw?.historyMeta?.recentSnapshots || 0))
     ? `<br><span class="tableSubMeta">History currently loaded from ${loadedDaily} service day file${loadedDaily === 1 ? "" : "s"} and ${Number(state.raw?.historyMeta?.recentSnapshots || 0)} full snapshot${Number(state.raw?.historyMeta?.recentSnapshots || 0) === 1 ? "" : "s"}.</span>`
     : "";
-  snapshotEl.innerHTML = `${escapeHtml(state.snapshotMeta.note || "Snapshot saving has not been configured yet.")}${state.snapshotMeta.pathname ? `<br><span class="tableSubMeta">Latest snapshot: ${escapeHtml(state.snapshotMeta.pathname)}</span>` : ""}${dailyPaths}${sourceMix}${historyNote}`;
+  const collectorHint = state.modeMeta?.collectorUrlHint ? `<br><span class="tableSubMeta">Collector URL hint: ${escapeHtml(state.modeMeta.collectorUrlHint)}</span>` : "";
+  snapshotEl.innerHTML = `${escapeHtml(state.snapshotMeta.note || "Snapshot saving has not been configured yet.")}${state.snapshotMeta.pathname ? `<br><span class="tableSubMeta">Latest snapshot: ${escapeHtml(state.snapshotMeta.pathname)}</span>` : ""}${dailyPaths}${sourceMix}${historyNote}${collectorHint}`;
   renderHistoryChart();
 }
 
@@ -840,38 +850,46 @@ function renderCacheWarning() {
   bar.className = `cacheWarningBar ${severity === "danger" ? "danger" : "warning"}`;
 }
 
+function renderModeUi() {
+  document.querySelectorAll(".modeBtn").forEach((btn) => btn.classList.toggle("active", btn.dataset.mode === state.mode));
+}
+
 function renderCacheMeta() {
   const ageEl = document.getElementById("cacheAgeInfo");
   const cycleEl = document.getElementById("cacheCycleInfo");
   if (ageEl) ageEl.textContent = `Data age ${Math.floor(getDataAgeSeconds() / 60)}m`;
-  if (cycleEl) cycleEl.textContent = `Shared ${Math.round((state.cacheSeconds || DEFAULT_CACHE_SECONDS) / 60)}m cache`;
+  if (cycleEl) cycleEl.textContent = state.mode === "crisis"
+    ? `Crisis live ${Math.round((state.cacheSeconds || DEFAULT_CACHE_SECONDS) / 60)}m cache`
+    : `Normal saved board ${Math.round((state.cacheSeconds || DEFAULT_CACHE_SECONDS) / 60)}m refresh cycle`;
+  renderModeUi();
 }
 
 function buildInstructions() {
   return `
     <p><strong>What this dashboard shows</strong></p>
     <ul>
-      <li>This board gives a live operational view of Pakistan related commercial flights with Islamabad as the default scope.</li>
+      <li>This board opens on <strong>All airports</strong> and the <strong>All</strong> day window so you can immediately see the wider Pakistan picture.</li>
       <li>The purpose is to spot disruption quickly and give an early warning when practical outbound options to key hubs are starting to thin out.</li>
+    </ul>
+
+    <p><strong>How the data model now works</strong></p>
+    <ul>
+      <li><strong>Normal mode</strong> serves the latest saved collector dataset from Blob by default. It is the low cost operating mode and should be your default outside crisis.</li>
+      <li><strong>Crisis mode</strong> switches to a fresh live FlightAware pull with deeper page depth. It costs materially more, which is why the board shows a warning before entering it.</li>
+      <li>The recommended pattern is to run the <strong>Normal collector every 8 hours</strong> so the board stays populated and your rolling baseline keeps building.</li>
     </ul>
 
     <p><strong>How to use it</strong></p>
     <ul>
-      <li><strong>Flights</strong> shows the live flight rows for the current scope.</li>
+      <li><strong>Flights</strong> shows the visible rows for the current scope and filters.</li>
       <li><strong>Early Warning</strong> compares current usable outbound departures against a checked baseline for the same selected day window, using like for like logic in the summary cards.</li>
       <li><strong>Airlines</strong> groups the visible rows by carrier.</li>
       <li><strong>Airports</strong> shows a quick airport and hub overview.</li>
-      <li><strong>Day</strong> switches between today, tomorrow, and all flights in the shared cached window.</li>
-      <li><strong>Airport</strong> changes the scope. Islamabad is the default. Lahore and Karachi load on demand. All gives all three airports with lighter depth for Lahore and Karachi.</li>
+      <li><strong>Day</strong> switches between today, tomorrow, and all flights in the saved or live window.</li>
+      <li><strong>Airport</strong> filters the board between Islamabad, Lahore, Karachi, or All airports.</li>
+      <li><strong>Data mode</strong> switches between saved low cost monitoring and live crisis monitoring.</li>
       <li><strong>PKT / UK</strong> switches the displayed time reference for the board.</li>
       <li><strong>Load factor</strong> changes only the passenger estimate, not the flight status or timings.</li>
-    </ul>
-
-    <p><strong>How to read the board</strong></p>
-    <ul>
-      <li><strong>PAX</strong> means estimated passengers. It is not a booking count. It is a seat estimate based on aircraft type multiplied by the selected load factor.</li>
-      <li><strong>Cancelled</strong> and <strong>Delayed &gt;60m</strong> tiles highlight material disruption.</li>
-      <li><strong>Fresh</strong>, <strong>Warning</strong>, and <strong>Stale</strong> are based on the age of the shared cached dataset for the current scope, not when your browser tab opened.</li>
     </ul>
 
     <p><strong>How to read Early Warning</strong></p>
@@ -879,10 +897,9 @@ function buildInstructions() {
       <li>The Early Warning view focuses on practical outbound hub options rather than every flight equally.</li>
       <li><strong>From</strong> shows which Pakistan airport the route leaves from.</li>
       <li><strong>Usable</strong> means a departure that is not cancelled, not diverted, and not delayed more than 60 minutes.</li>
-      <li><strong>Normal expected in window</strong> now uses a checked baseline route by route. Where current weekday slot timings were verified with confidence, those exact day slots are used. Where the timetable was less clear, the board uses a checked weekly frequency fallback rather than pretending to know an exact day pattern.</li>
-      <li>Only routes that have now been reviewed are shown in Early Warning. This keeps the table tighter but more trustworthy.</li>
-      <li>The coverage card matters. If the source signalled more pages than were pulled, current scheduled counts may still be understated even when the baseline is correct.</li>
-      <li>As Blob snapshot history builds up, the rolling baseline can gradually replace some weekly fallbacks with observed operating patterns from your own stored data.</li>
+      <li><strong>Normal expected in window</strong> shows where the expected count came from for each row, whether published slots, rolling history, or checked weekly fallback.</li>
+      <li>The coverage line still matters. If the source signalled more pages than were pulled, current scheduled counts may still be understated even when the baseline is correct.</li>
+      <li>The history chart is now split by airport tab so it stays readable. Use the Islamabad, Lahore, and Karachi buttons with Day or Week views to compare tracked airlines including Thai where history exists.</li>
     </ul>
   `;
 }
@@ -902,11 +919,15 @@ function buildBriefReadout() {
   const delayedPax = delayed.reduce((sum, f) => sum + estimatePax(f), 0);
   const divertedPax = diverted.reduce((sum, f) => sum + estimatePax(f), 0);
   const warning = getEarlyWarningModel();
+  const sourceText = state.mode === "normal"
+    ? "latest saved collector dataset"
+    : "fresh live crisis pull";
   return `
     <p><strong>Current scope:</strong> ${escapeHtml(state.scopeLabel)}.</p>
+    <p><strong>Data mode:</strong> ${escapeHtml(state.modeMeta?.label || state.mode)} using the ${escapeHtml(sourceText)}.</p>
     <p><strong>Current filtered board:</strong> ${rows.length} flights.</p>
     <p><strong>Data age:</strong> ${Math.floor(getDataAgeSeconds() / 60)} minutes.</p>
-    <p><strong>Early warning signal:</strong> ${warning.signal}. Usable key hub departures in next 12 hours: ${warning.upcoming12.length}. Estimated usable PAX in next 12 hours: ~${formatNumber(warning.usablePax12)}. Coverage: ${warning.coverage.label}. ${warning.coverage.detail}</p>
+    <p><strong>Early warning signal:</strong> ${warning.signal}. Usable tracked departures in the selected window: ${warning.baseline.usableTotal}. Normal expected in the same window: ${warning.baseline.expectedTotal.toFixed(1)}. Coverage: ${warning.coverage.label}. ${warning.coverage.detail}</p>
     <p><strong>Disruption picture:</strong> ${cancelled.length} cancelled, ${diverted.length} diverted, ${delayed.length} delayed over 60 minutes.</p>
     <p><strong>Estimated affected passengers:</strong> ~${formatNumber(cancelledPax)} cancelled PAX, ~${formatNumber(divertedPax)} diverted PAX, ~${formatNumber(delayedPax)} delayed PAX.</p>
     <p><strong>Most severe rows:</strong></p>
@@ -981,13 +1002,15 @@ function startCacheTimer() {
 
 async function load(isBackground = false) {
   try {
-    const res = await fetch(`/api/flights?airport=${encodeURIComponent(state.airport)}`);
+    const res = await fetch(`/api/flights?airport=${encodeURIComponent(state.airport)}&mode=${encodeURIComponent(state.mode)}`);
     const data = await res.json();
     if (!res.ok) throw new Error(data?.warnings?.[0] || "Failed to load board data.");
     state.raw = data;
     state.cacheSeconds = Number(data.cacheSeconds || DEFAULT_CACHE_SECONDS);
     state.scopeLabel = data.scopeLabel || "Islamabad default";
     state.snapshotMeta = data.snapshotMeta || state.snapshotMeta;
+    state.modeMeta = data.modeMeta || state.modeMeta;
+    state.mode = data.modeMeta?.key || state.mode;
     const generatedAtMs = data.generatedAt ? new Date(data.generatedAt).getTime() : Date.now();
     state.datasetGeneratedAtMs = generatedAtMs;
     state.lastLoadFailed = false;
@@ -1056,24 +1079,71 @@ function closeBrief() { const modal = document.getElementById("briefModal"); if 
 function openAirlineStatus() { const modal = document.getElementById("airlineStatusModal"); const body = document.getElementById("airlineStatusBody"); if (!modal || !body) return; body.innerHTML = buildAirlineStatus(); modal.classList.remove("hidden"); }
 function closeAirlineStatus() { const modal = document.getElementById("airlineStatusModal"); if (modal) modal.classList.add("hidden"); }
 
-document.addEventListener("click", (e) => {
-  if (e.target.classList.contains("seg")) {
-    document.querySelectorAll(".seg").forEach((x) => x.classList.remove("active"));
-    e.target.classList.add("active");
-    state.day = e.target.dataset.day;
+function openCrisisConfirm() {
+  const modal = document.getElementById("crisisConfirmModal");
+  if (modal) modal.classList.remove("hidden");
+}
+function closeCrisisConfirm() {
+  const modal = document.getElementById("crisisConfirmModal");
+  if (modal) modal.classList.add("hidden");
+}
+async function switchMode(nextMode) {
+  state.mode = nextMode;
+  state.airline = "All";
+  await load(false);
+}
+
+document.addEventListener("click", async (e) => {
+  const dayBtn = e.target.closest(".seg[data-day]");
+  if (dayBtn) {
+    state.day = dayBtn.dataset.day;
+    document.querySelectorAll(".seg[data-day]").forEach((x) => x.classList.toggle("active", x.dataset.day === state.day));
     refreshView();
+    return;
   }
-  if (e.target.classList.contains("timeBtn")) {
-    document.querySelectorAll(".timeBtn").forEach((x) => x.classList.remove("active"));
-    e.target.classList.add("active");
-    state.timezoneMode = e.target.dataset.tz;
+  const tzBtn = e.target.closest(".timeBtn[data-tz]");
+  if (tzBtn) {
+    state.timezoneMode = tzBtn.dataset.tz;
+    document.querySelectorAll(".timeBtn[data-tz]").forEach((x) => x.classList.toggle("active", x.dataset.tz === state.timezoneMode));
     refreshView();
+    return;
   }
-  if (e.target.classList.contains("tab")) setActiveTab(e.target.dataset.tab);
+  const modeBtn = e.target.closest(".modeBtn[data-mode]");
+  if (modeBtn) {
+    const nextMode = modeBtn.dataset.mode;
+    if (nextMode === state.mode) return;
+    if (nextMode === "crisis") {
+      openCrisisConfirm();
+    } else {
+      await switchMode("normal");
+    }
+    return;
+  }
+  const historyBtn = e.target.closest("#historyDayBtn, #historyWeekBtn");
+  if (historyBtn) {
+    state.historyChartGranularity = historyBtn.id === "historyWeekBtn" ? "week" : "day";
+    renderEarlyWarning();
+    return;
+  }
+  const historyAirportBtn = e.target.closest(".historyAirportBtn[data-history-airport]");
+  if (historyAirportBtn) {
+    state.historyChartAirport = historyAirportBtn.dataset.historyAirport;
+    renderEarlyWarning();
+    return;
+  }
+  const tabBtn = e.target.closest(".tab[data-tab]");
+  if (tabBtn) {
+    setActiveTab(tabBtn.dataset.tab);
+  }
 });
 
 document.getElementById("directionFilter").addEventListener("change", (e) => { state.direction = e.target.value; refreshView(); });
-document.getElementById("airportFilter").addEventListener("change", async (e) => { state.airport = e.target.value; state.airline = "All"; await load(false); });
+document.getElementById("airportFilter").addEventListener("change", async (e) => {
+  state.airport = e.target.value;
+  state.airline = "All";
+  if (state.mode === "normal") refreshView();
+  else await load(false);
+});
 document.getElementById("airlineFilter").addEventListener("change", (e) => { state.airline = e.target.value; refreshView(); });
 document.getElementById("statusFilter").addEventListener("change", (e) => { state.status = e.target.value; refreshView(); });
 document.getElementById("minorCarrierToggle").addEventListener("change", (e) => { state.includeMinor = e.target.checked; state.airline = "All"; refreshView(); });
@@ -1082,16 +1152,18 @@ document.getElementById("pauseRefreshBtn").addEventListener("click", () => { sta
 document.getElementById("exportBtn").addEventListener("click", exportRows);
 
 document.getElementById("resetFilters").addEventListener("click", async () => {
-  state.day = "today";
+  state.day = "all";
   state.direction = "Both";
-  state.airport = "ISB";
+  state.airport = "ALL";
   state.airline = "All";
   state.status = "All";
   state.includeMinor = false;
   state.loadFactor = 85;
-  document.querySelectorAll(".seg").forEach((x) => x.classList.toggle("active", x.dataset.day === "today"));
+  state.historyChartAirport = "ISB";
+  document.querySelectorAll(".seg[data-day]").forEach((x) => x.classList.toggle("active", x.dataset.day === "all"));
   document.getElementById("loadFactorSlider").value = "85";
-  await load(false);
+  if (state.mode === "normal") refreshView();
+  else await load(false);
 });
 
 document.getElementById("instructionsBtn").addEventListener("click", openInstructions);
@@ -1100,8 +1172,12 @@ document.getElementById("briefBtn").addEventListener("click", openBrief);
 document.getElementById("closeBriefBtn").addEventListener("click", closeBrief);
 document.getElementById("airlineStatusBtn").addEventListener("click", openAirlineStatus);
 document.getElementById("closeAirlineStatusBtn").addEventListener("click", closeAirlineStatus);
+document.getElementById("closeCrisisConfirmBtn").addEventListener("click", closeCrisisConfirm);
+document.getElementById("cancelCrisisBtn").addEventListener("click", closeCrisisConfirm);
+document.getElementById("confirmCrisisBtn").addEventListener("click", async () => { closeCrisisConfirm(); await switchMode("crisis"); });
 document.getElementById("instructionsModal").addEventListener("click", (e) => { if (e.target.id === "instructionsModal") closeInstructions(); });
 document.getElementById("briefModal").addEventListener("click", (e) => { if (e.target.id === "briefModal") closeBrief(); });
 document.getElementById("airlineStatusModal").addEventListener("click", (e) => { if (e.target.id === "airlineStatusModal") closeAirlineStatus(); });
+document.getElementById("crisisConfirmModal").addEventListener("click", (e) => { if (e.target.id === "crisisConfirmModal") closeCrisisConfirm(); });
 
 load();

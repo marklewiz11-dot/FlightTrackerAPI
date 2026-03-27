@@ -20,7 +20,8 @@ let state = {
   lastLoadFailed: false,
   loadFactor: 85,
   scopeLabel: "Islamabad default",
-  snapshotMeta: { enabled: false, saved: false, note: "Snapshot saving not configured.", recentCount: null }
+  snapshotMeta: { enabled: false, saved: false, note: "Snapshot saving not configured.", recentCount: null },
+  historyChartGranularity: "day"
 };
 
 const AIRLINE_STATUS_LINKS = [
@@ -70,29 +71,50 @@ const AIRCRAFT_CAPACITY = {
   "739": 215, "772": 314, "77W": 396, "788": 248, "789": 290
 };
 
-const EXTERNAL_GULF_BASELINE = {
+const WEEKDAY_ORDER = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function slotsAll(times) {
+  return WEEKDAY_ORDER.reduce((acc, day) => {
+    acc[day] = [...times];
+    return acc;
+  }, {});
+}
+
+const PUBLISHED_SCHEDULE_BASELINE = {
   ISB: [
-    { from: "ISB", hub: "DOH", airline: "Qatar Airways", weekly: 14 },
-    { from: "ISB", hub: "DXB", airline: "Emirates", weekly: 10 },
-    { from: "ISB", hub: "DXB", airline: "flydubai", weekly: 7 },
-    { from: "ISB", hub: "AUH", airline: "Etihad Airways", weekly: 14 }
+    { origin: "ISB", hub: "DOH", airline: "Qatar Airways", weeklyFallback: 7, slotsByWeekday: slotsAll(["09:45"]) },
+    { origin: "ISB", hub: "DXB", airline: "Emirates", weeklyFallback: 10 },
+    { origin: "ISB", hub: "DXB", airline: "flydubai", weeklyFallback: 7 },
+    { origin: "ISB", hub: "AUH", airline: "Etihad Airways", weeklyFallback: 14 },
+    { origin: "ISB", hub: "IST", airline: "Turkish Airlines", weeklyFallback: 7, slotsByWeekday: slotsAll(["06:15"]) },
+    { origin: "ISB", hub: "LGW", airline: "British Airways", weeklyFallback: 3, slotsByWeekday: {
+      Sun: [], Mon: ["00:35"], Tue: [], Wed: [], Thu: ["00:35"], Fri: [], Sat: ["00:35"]
+    } },
+    { origin: "ISB", hub: "BKK", airline: "Thai Airways", weeklyFallback: 4, slotsByWeekday: {
+      Sun: [], Mon: ["23:20"], Tue: [], Wed: ["23:20"], Thu: [], Fri: ["23:20"], Sat: ["23:20"]
+    } }
   ],
   LHE: [
-    { from: "LHE", hub: "DOH", airline: "Qatar Airways", weekly: 14 },
-    { from: "LHE", hub: "DXB", airline: "Emirates", weekly: 10 },
-    { from: "LHE", hub: "DXB", airline: "flydubai", weekly: 7 },
-    { from: "LHE", hub: "AUH", airline: "Etihad Airways", weekly: 14 }
+    { origin: "LHE", hub: "DOH", airline: "Qatar Airways", weeklyFallback: 14 },
+    { origin: "LHE", hub: "DXB", airline: "Emirates", weeklyFallback: 10 },
+    { origin: "LHE", hub: "DXB", airline: "flydubai", weeklyFallback: 7, slotsByWeekday: slotsAll(["12:05"]) },
+    { origin: "LHE", hub: "AUH", airline: "Etihad Airways", weeklyFallback: 14 },
+    { origin: "LHE", hub: "IST", airline: "Turkish Airlines", weeklyFallback: 7, slotsByWeekday: slotsAll(["10:10"]) },
+    { origin: "LHE", hub: "BKK", airline: "Thai Airways", weeklyFallback: 6 }
   ],
   KHI: [
-    { from: "KHI", hub: "DOH", airline: "Qatar Airways", weekly: 14 },
-    { from: "KHI", hub: "DXB", airline: "Emirates", weekly: 20 },
-    { from: "KHI", hub: "AUH", airline: "Etihad Airways", weekly: 14 }
+    { origin: "KHI", hub: "DOH", airline: "Qatar Airways", weeklyFallback: 7, slotsByWeekday: slotsAll(["04:20"]) },
+    { origin: "KHI", hub: "DXB", airline: "Emirates", weeklyFallback: 20 },
+    { origin: "KHI", hub: "DXB", airline: "flydubai", weeklyFallback: 28 },
+    { origin: "KHI", hub: "AUH", airline: "Etihad Airways", weeklyFallback: 28 },
+    { origin: "KHI", hub: "IST", airline: "Turkish Airlines", weeklyFallback: 7, slotsByWeekday: slotsAll(["06:15"]) },
+    { origin: "KHI", hub: "BKK", airline: "Thai Airways", weeklyFallback: 5 }
   ]
 };
-EXTERNAL_GULF_BASELINE.ALL = [
-  ...EXTERNAL_GULF_BASELINE.ISB,
-  ...EXTERNAL_GULF_BASELINE.LHE,
-  ...EXTERNAL_GULF_BASELINE.KHI
+PUBLISHED_SCHEDULE_BASELINE.ALL = [
+  ...PUBLISHED_SCHEDULE_BASELINE.ISB,
+  ...PUBLISHED_SCHEDULE_BASELINE.LHE,
+  ...PUBLISHED_SCHEDULE_BASELINE.KHI
 ];
 
 function getTimeZoneInfo() {
@@ -115,6 +137,82 @@ function getAgeSeverity() {
 
 function getSelectedWindowDays() {
   return state.day === "all" ? 2 : 1;
+}
+
+function getPakistanNow() {
+  return new Date(new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Karachi",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  }).format(new Date()).replace(/(\d{2})\/(\d{2})\/(\d{4}),\s*/, "$3-$1-$2T") + "+05:00");
+}
+
+function getSelectedPakistanDates() {
+  const now = getPakistanNow();
+  const today = new Date(now.getTime());
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  if (state.day === "today") return [today];
+  if (state.day === "tomorrow") return [tomorrow];
+  return [today, tomorrow];
+}
+
+function getWeekdayKeyForDate(date) {
+  return new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Karachi", weekday: "short" }).format(date);
+}
+
+function getWeekdayKeyForIso(value) {
+  if (!value) return null;
+  return new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Karachi", weekday: "short" }).format(new Date(value));
+}
+
+function getPakistanDateKey(value) {
+  if (!value) return null;
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Karachi", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
+}
+
+function getPakistanTimeKey(value) {
+  if (!value) return null;
+  return new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Karachi", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
+}
+
+function formatSlotTimes(slots) {
+  const unique = [...new Set((slots || []).filter(Boolean))].sort();
+  if (!unique.length) return "—";
+  return unique.join(", ");
+}
+
+function getPublishedWindowSlots(entry) {
+  const slotsByWeekday = entry?.slotsByWeekday || {};
+  return getSelectedPakistanDates().flatMap((date) => slotsByWeekday[getWeekdayKeyForDate(date)] || []);
+}
+
+function getRollingBaselineForEntry(entry) {
+  const history = state.raw?.historyMeta?.rollingByRouteWeekday || {};
+  const routeKey = `${entry.origin || state.airport}|${entry.hub}|${entry.airline || ""}`;
+  const routeHistory = history[routeKey] || {};
+  const selectedDates = getSelectedPakistanDates();
+  const dayModels = selectedDates
+    .map((date) => routeHistory[getWeekdayKeyForDate(date)] || null)
+    .filter(Boolean);
+
+  if (!dayModels.length) {
+    return { expectedCount: null, usableCount: null, slots: [], sampleCount: 0 };
+  }
+
+  const expectedCount = dayModels.reduce((sum, item) => sum + Number(item.expectedScheduledAvg || 0), 0);
+  const usableCount = dayModels.reduce((sum, item) => sum + Number(item.expectedUsableAvg || 0), 0);
+  const sampleCount = Math.min(...dayModels.map((item) => Number(item.sampleCount || 0)));
+  const slots = dayModels.flatMap((item) => item.normalSlots || []);
+  return { expectedCount, usableCount, slots, sampleCount };
+}
+
+function getWeeklyFallbackExpected(entry) {
+  return (Number(entry?.weeklyFallback || 0) / 7) * getSelectedWindowDays();
 }
 
 function zonedDateParts(value) {
@@ -246,46 +344,93 @@ function getEarlyWarningRows() {
 }
 
 function getBaselineEntriesForScope() {
-  return EXTERNAL_GULF_BASELINE[state.airport] || EXTERNAL_GULF_BASELINE.ISB;
+  return PUBLISHED_SCHEDULE_BASELINE[state.airport] || PUBLISHED_SCHEDULE_BASELINE.ISB;
 }
 
-function rowMatchesBaselineEntry(row, entry) {
-  if (!row || row.direction !== "Departure") return false;
-  const fromCode = String(row.airportCode || row.origin || "").toUpperCase();
-  return fromCode === String(entry.from || "").toUpperCase()
-    && String(row.destination || "").toUpperCase() === String(entry.hub || "").toUpperCase()
-    && String(row.airline || "").trim().toLowerCase() === String(entry.airline || "").trim().toLowerCase();
+function getBaselineRouteKey(entry) {
+  return `${String(entry.origin || state.airport).toUpperCase()}|${String(entry.hub || '').toUpperCase()}|${String(entry.airline || '').toLowerCase()}`;
 }
 
-function isTrackedBaselineDeparture(row) {
-  return getBaselineEntriesForScope().some((entry) => rowMatchesBaselineEntry(row, entry));
+function getTrackedBaselineRouteKeys() {
+  return new Set(getBaselineEntriesForScope().map(getBaselineRouteKey));
 }
 
-function getTrackedDepartureRowsForWindow() {
-  return getEarlyWarningRows()
-    .filter((row) => row.direction === "Departure")
-    .filter((row) => isTrackedBaselineDeparture(row));
+function isTrackedBaselineRow(row) {
+  const key = `${String(row.origin || state.airport).toUpperCase()}|${String(row.destination || '').toUpperCase()}|${String(row.airline || '').toLowerCase()}`;
+  return getTrackedBaselineRouteKeys().has(key);
+}
+
+function getTrackedEarlyWarningRows() {
+  return getEarlyWarningRows().filter((row) => row.direction === "Departure" && isTrackedBaselineRow(row));
+}
+
+function getCoverageSummary(filteredOutboundRows) {
+  const coverage = state.raw?.coverageMeta?.departures;
+  const shownCount = filteredOutboundRows.length;
+  if (!coverage) {
+    return { label: "Unknown", cls: "signalMedium", detail: `${shownCount} tracked departure row${shownCount === 1 ? "" : "s"} shown in the selected window.` };
+  }
+  if (coverage.truncatedPossible) {
+    return {
+      label: "Check coverage",
+      cls: "signalHigh",
+      detail: `${shownCount} tracked departure row${shownCount === 1 ? "" : "s"} shown in the selected window. The source pull signalled extra departure pages beyond the configured page cap, so scheduled counts may be understated.`
+    };
+  }
+  return {
+    label: "Good",
+    cls: "signalLow",
+    detail: `${shownCount} tracked departure row${shownCount === 1 ? "" : "s"} shown in the selected window. No extra departure page was signalled by the source pull.`
+  };
 }
 
 function getBaselineComparison() {
-  const outbound = getTrackedDepartureRowsForWindow();
-  const windowDays = getSelectedWindowDays();
+  const outbound = getTrackedEarlyWarningRows();
   const entries = getBaselineEntriesForScope();
 
   const routeLines = entries.map((entry) => {
-    const expected = (entry.weekly / 7) * windowDays;
-    const matching = outbound.filter((r) => rowMatchesBaselineEntry(r, entry));
+    const matching = outbound.filter((r) =>
+      String(r.origin || "").toUpperCase() === String(entry.origin || state.airport).toUpperCase() &&
+      String(r.destination || "").toUpperCase() === entry.hub &&
+      String(r.airline || "").toLowerCase() === entry.airline.toLowerCase()
+    );
     const usable = matching.filter((r) => !isCancelled(r) && !isDiverted(r) && !isDelayed60(r));
+
+    const publishedSlots = getPublishedWindowSlots(entry);
+    const rolling = getRollingBaselineForEntry(entry);
+    const weeklyFallback = getWeeklyFallbackExpected(entry);
+
+    let expected = weeklyFallback;
+    let expectedDisplay = weeklyFallback.toFixed(1);
+    let expectedSubline = "Checked weekly frequency fallback. Used where an exact current weekday slot pattern was not verified strongly enough to hard code.";
+    let baselineSource = "weeklyFallback";
+
+    if (publishedSlots.length) {
+      expected = publishedSlots.length;
+      expectedDisplay = String(publishedSlots.length);
+      expectedSubline = `Published slots: ${formatSlotTimes(publishedSlots)}`;
+      baselineSource = "publishedSlots";
+    } else if (rolling.sampleCount >= 3 && rolling.expectedCount != null) {
+      expected = rolling.expectedCount;
+      expectedDisplay = rolling.expectedCount.toFixed(1);
+      expectedSubline = `Observed rolling baseline from ${rolling.sampleCount} service day${rolling.sampleCount === 1 ? "" : "s"}: ${formatSlotTimes(rolling.slots)}`;
+      baselineSource = "rollingHistory";
+    }
+
     return {
       ...entry,
       expected,
+      expectedDisplay,
+      expectedSubline,
+      baselineSource,
+      rollingSampleCount: rolling.sampleCount,
       current: matching.length,
       usable: usable.length,
       estPax: usable.reduce((sum, r) => sum + estimatePax(r), 0)
     };
   });
 
-  const expectedTotal = routeLines.reduce((sum, r) => sum + r.expected, 0);
+  const expectedTotal = routeLines.reduce((sum, r) => sum + Number(r.expected || 0), 0);
   const currentTotal = routeLines.reduce((sum, r) => sum + r.current, 0);
   const usableTotal = routeLines.reduce((sum, r) => sum + r.usable, 0);
   const estPaxTotal = routeLines.reduce((sum, r) => sum + r.estPax, 0);
@@ -295,15 +440,14 @@ function getBaselineComparison() {
     if (ratio < 0.4) signal = "Low";
     else if (ratio < 0.75) signal = "Tightening";
   }
-  return { routeLines, expectedTotal, currentTotal, usableTotal, estPaxTotal, signal, windowDays };
+  return { routeLines, expectedTotal, currentTotal, usableTotal, estPaxTotal, signal };
 }
 
-function getUpcomingUsableOutbound(hoursAhead = 24, trackedOnly = false) {
+function getUpcomingUsableOutbound(hoursAhead = 24) {
   const nowMs = Date.now();
   const horizonMs = nowMs + hoursAhead * 60 * 60 * 1000;
-  let rows = getEarlyWarningRows().filter((row) => isUsableDeparture(row));
-  if (trackedOnly) rows = rows.filter((row) => isTrackedBaselineDeparture(row));
-  return rows
+  return getTrackedEarlyWarningRows()
+    .filter((row) => isUsableDeparture(row))
     .filter((row) => {
       const dep = toMillis(bestDepTime(row) || row.scheduledDep);
       return dep > nowMs && dep <= horizonMs;
@@ -313,7 +457,8 @@ function getUpcomingUsableOutbound(hoursAhead = 24, trackedOnly = false) {
 
 function getEarlyWarningModel() {
   const baseline = getBaselineComparison();
-  const upcomingTracked24 = getUpcomingUsableOutbound(24, true);
+  const windowUsableRows = getTrackedEarlyWarningRows().filter((row) => isUsableDeparture(row));
+  const nextOutbound = getUpcomingUsableOutbound(24);
   const ratio = baseline.expectedTotal > 0 ? baseline.usableTotal / baseline.expectedTotal : 1;
   let severity = "low";
   let signal = "Normal";
@@ -324,14 +469,16 @@ function getEarlyWarningModel() {
     severity = "medium";
     signal = "Tightening";
   }
+  const coverage = getCoverageSummary(getTrackedEarlyWarningRows());
   return {
     baseline,
-    upcomingTracked24,
     ratio,
     severity,
     signal,
-    usableTrackedWindow: baseline.usableTotal,
-    usableTrackedPaxWindow: baseline.estPaxTotal
+    coverage,
+    windowUsableRows,
+    usablePaxWindow: baseline.estPaxTotal,
+    nextOutbound
   };
 }
 
@@ -483,6 +630,74 @@ function renderAirportCards(rows) {
   hubEl.innerHTML = hubCards.map((card) => `<div class="airportCard ${card.cancelled > 0 ? "airportCardAlert" : ""}"><div class="airportCodeRow"><div class="airportCode">${card.code}</div>${card.cancelled > 0 ? `<div class="airportAlertDot">• ${card.cancelled}</div>` : ""}</div><div class="airportName">${card.name}</div><div class="airportStatsLine"><span>Total <strong>${card.total}</strong></span><span class="badText">Canx <strong>${card.cancelled}</strong></span><span class="warnText">Delay >60 <strong>${card.delayed}</strong></span></div><div class="airportNext">Next: ${card.nextMovement}</div></div>`).join("");
 }
 
+function getHistorySeriesForChart(granularity = state.historyChartGranularity || "day") {
+  const timeline = state.raw?.historyMeta?.timelineMeta || {};
+  const series = granularity === "week" ? safeArray(timeline.airlineWeekly || []) : safeArray(timeline.airlineDaily || []);
+  const trackedAirlines = new Set(getBaselineEntriesForScope().map((entry) => `${String(entry.origin || state.airport).toUpperCase()}|${String(entry.airline || '').toLowerCase()}`));
+  const filtered = series.filter((item) => {
+    const origin = String(item.origin || '').toUpperCase();
+    if (state.airport !== "ALL" && origin !== state.airport) return false;
+    const key = `${origin}|${String(item.airline || '').toLowerCase()}`;
+    return trackedAirlines.has(key);
+  });
+  const labelKey = granularity === "week" ? "weekStart" : "serviceDate";
+  const labels = [...new Set(filtered.map((item) => item[labelKey]).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const grouped = new Map();
+  for (const item of filtered) {
+    const name = state.airport === "ALL" ? `${item.origin} ${item.airline}` : item.airline;
+    if (!grouped.has(name)) grouped.set(name, { name, points: new Map(), total: 0 });
+    grouped.get(name).points.set(item[labelKey], Number(item.scheduled || 0));
+    grouped.get(name).total += Number(item.scheduled || 0);
+  }
+  const datasets = [...grouped.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name)).slice(0, 8).map((group) => ({
+    name: group.name,
+    values: labels.map((label) => Number(group.points.get(label) || 0))
+  }));
+  return { labels, datasets, granularity };
+}
+
+function formatHistoryChartLabel(label, granularity) {
+  if (!label) return "";
+  if (granularity === "week") return `Week of ${label}`;
+  return label;
+}
+
+function renderHistoryChart() {
+  const wrap = document.getElementById("historyChart");
+  const meta = document.getElementById("historyChartMeta");
+  if (!wrap || !meta) return;
+  const chart = getHistorySeriesForChart();
+  if (!chart.labels.length || !chart.datasets.length) {
+    wrap.innerHTML = `<div class="emptyBlock">History chart will appear once enough snapshots have been saved for the selected scope.</div>`;
+    meta.textContent = state.raw?.historyMeta?.note || "History is still building.";
+    return;
+  }
+  const width = 900;
+  const height = 280;
+  const padLeft = 44;
+  const padRight = 20;
+  const padTop = 16;
+  const padBottom = 34;
+  const plotWidth = width - padLeft - padRight;
+  const plotHeight = height - padTop - padBottom;
+  const maxValue = Math.max(1, ...chart.datasets.flatMap((set) => set.values));
+  const xForIndex = (idx) => chart.labels.length === 1 ? padLeft + plotWidth / 2 : padLeft + (idx * plotWidth / (chart.labels.length - 1));
+  const yForValue = (val) => padTop + plotHeight - (val / maxValue) * plotHeight;
+  const gridValues = [...new Set([0, Math.ceil(maxValue / 2), maxValue])].sort((a, b) => a - b);
+  const seriesMarkup = chart.datasets.map((set, idx) => {
+    const pts = set.values.map((val, i) => `${xForIndex(i)},${yForValue(val)}`).join(' ');
+    const dash = idx % 2 === 1 ? '6 4' : '0';
+    const pointDots = set.values.map((val, i) => `<circle cx="${xForIndex(i)}" cy="${yForValue(val)}" r="3"></circle>`).join('');
+    return `<g class="historySeries series${idx % 6}"><polyline points="${pts}" fill="none" stroke-dasharray="${dash}"></polyline>${pointDots}</g>`;
+  }).join('');
+  const gridMarkup = gridValues.map((val) => `<g class="historyGrid"><line x1="${padLeft}" y1="${yForValue(val)}" x2="${width - padRight}" y2="${yForValue(val)}"></line><text x="${padLeft - 8}" y="${yForValue(val) + 4}" text-anchor="end">${val}</text></g>`).join('');
+  const xLabels = chart.labels.map((label, idx) => `<text class="historyAxisLabel" x="${xForIndex(idx)}" y="${height - 10}" text-anchor="middle">${escapeHtml(label.slice(5))}</text>`).join('');
+  const legend = chart.datasets.map((set, idx) => `<span class="historyLegendItem"><span class="historyLegendLine series${idx % 6}"></span>${escapeHtml(set.name)}</span>`).join('');
+  wrap.innerHTML = `<svg viewBox="0 0 ${width} ${height}" class="historySvg" role="img" aria-label="Tracked airline history chart"><rect x="0" y="0" width="${width}" height="${height}" rx="10" ry="10"></rect>${gridMarkup}<line class="historyAxis" x1="${padLeft}" y1="${padTop}" x2="${padLeft}" y2="${padTop + plotHeight}"></line><line class="historyAxis" x1="${padLeft}" y1="${padTop + plotHeight}" x2="${width - padRight}" y2="${padTop + plotHeight}"></line>${seriesMarkup}${xLabels}</svg><div class="historyLegend">${legend}</div>`;
+  const scopeText = state.airport === "ALL" ? "all airports" : (PAKISTAN_AIRPORT_NAMES[state.airport] || state.airport);
+  meta.textContent = `Tracked airline scheduled departures by ${chart.granularity === "week" ? "week" : "service day"} for ${scopeText}. ${state.raw?.historyMeta?.note || ""}`.trim();
+}
+
 function renderDisruptionFeed(rows) {
   const el = document.getElementById("disruptionFeed");
   const disruptions = [...rows].filter(isDisrupted).sort((a, b) => {
@@ -503,16 +718,28 @@ function renderDisruptionFeed(rows) {
 
 function renderEarlyWarning() {
   const cardsEl = document.getElementById("earlyWarningCards");
+  const metaEl = document.getElementById("earlyWarningMeta");
   const rowsEl = document.getElementById("earlyWarningRows");
   const outboundEl = document.getElementById("usableOutboundRows");
   const snapshotEl = document.getElementById("snapshotMetaText");
+  const dayBtn = document.getElementById("historyDayBtn");
+  const weekBtn = document.getElementById("historyWeekBtn");
   const model = getEarlyWarningModel();
+  if (dayBtn) dayBtn.classList.toggle("active", state.historyChartGranularity !== "week");
+  if (weekBtn) weekBtn.classList.toggle("active", state.historyChartGranularity === "week");
   const severityClass = model.severity === "high" ? "warningRiskHigh" : (model.severity === "medium" ? "warningRiskMedium" : "warningRiskLow");
   cardsEl.innerHTML = `
-    <div class="warningCard ${severityClass}"><div class="warningCardLabel">Overall signal</div><div class="warningCardValue">${model.signal}</div><div class="warningCardSub">Based on tracked routes only, using the same airlines and hubs as the normal expected baseline.</div></div>
-    <div class="warningCard"><div class="warningCardLabel">Usable tracked departures in window</div><div class="warningCardValue">${model.usableTrackedWindow}</div><div class="warningCardSub">Same tracked airlines, hubs, and selected day window as the normal expected figure.</div></div>
-    <div class="warningCard"><div class="warningCardLabel">Est. usable tracked PAX in window</div><div class="warningCardValue">~${formatNumber(model.usableTrackedPaxWindow)}</div><div class="warningCardSub">Estimated usable passenger capacity for those same tracked departures.</div></div>
-    <div class="warningCard"><div class="warningCardLabel">Normal expected in window</div><div class="warningCardValue">${model.baseline.expectedTotal.toFixed(1)}</div><div class="warningCardSub">Published weekly baseline converted into the same selected day window.</div></div>`;
+    <div class="warningCard ${severityClass}"><div class="warningCardLabel">Overall signal</div><div class="warningCardValue">${model.signal}</div><div class="warningCardSub">Based on usable tracked departures against the normal expected level for the same selected scope and day window.</div></div>
+    <div class="warningCard"><div class="warningCardLabel">Usable tracked departures in window</div><div class="warningCardValue">${model.baseline.usableTotal}</div><div class="warningCardSub">Same tracked airlines, hubs and selected day window as the normal expected comparison.</div></div>
+    <div class="warningCard"><div class="warningCardLabel">Est. usable PAX in window</div><div class="warningCardValue">${formatNumber(model.usablePaxWindow)}</div><div class="warningCardSub">Estimated onward passenger carrying capacity in the same comparison window.</div></div>
+    <div class="warningCard"><div class="warningCardLabel">Normal expected in window</div><div class="warningCardValue">${model.baseline.expectedTotal.toFixed(1)}</div><div class="warningCardSub">Each row below shows whether that expected count came from published slots, rolling history or weekly fallback.</div></div>`;
+
+  if (metaEl) {
+    const snapshotSummary = state.snapshotMeta.saved
+      ? `Latest refresh saved. Snapshot count: ${state.snapshotMeta.recentCount ?? "—"}.`
+      : (state.snapshotMeta.note || "Snapshot collection not active.");
+    metaEl.innerHTML = `<span class="earlyWarningMetaPill ${model.coverage.cls}">${escapeHtml(model.coverage.label)}</span><span>${escapeHtml(model.coverage.detail)}</span><span>•</span><span>${escapeHtml(snapshotSummary)}</span>`;
+  }
 
   if (!model.baseline.routeLines.length) {
     rowsEl.innerHTML = `<tr><td colspan="8"><div class="emptyState">No baseline routes configured for this scope.</div></td></tr>`;
@@ -522,10 +749,10 @@ function renderEarlyWarning() {
       if (line.usable === 0 && line.expected > 0) signal = { label: "Low", cls: "signalHigh" };
       else if (line.usable < line.expected) signal = { label: "Tightening", cls: "signalMedium" };
       return `<tr>
-        <td>${escapeHtml(line.from || "—")}</td>
+        <td>${escapeHtml(PAKISTAN_AIRPORT_NAMES[line.origin] || line.origin || state.airport)}</td>
         <td>${line.hub}</td>
         <td>${escapeHtml(line.airline)}</td>
-        <td>${line.expected.toFixed(1)}</td>
+        <td>${escapeHtml(line.expectedDisplay)}<span class="tableSubMeta">${escapeHtml(line.expectedSubline)}</span></td>
         <td>${line.current}</td>
         <td>${line.usable}</td>
         <td>~${formatNumber(line.estPax)}</td>
@@ -534,10 +761,10 @@ function renderEarlyWarning() {
     }).join("");
   }
 
-  if (!model.upcomingTracked24.length) {
-    outboundEl.innerHTML = `<tr><td colspan="6"><div class="emptyState">No usable tracked departures in the next 24 hours in the current scope.</div></td></tr>`;
+  if (!model.nextOutbound.length) {
+    outboundEl.innerHTML = `<tr><td colspan="6"><div class="emptyState">No usable key hub departures in the next 24 hours in the current scope.</div></td></tr>`;
   } else {
-    outboundEl.innerHTML = model.upcomingTracked24.slice(0, 12).map((row) => `<tr>
+    outboundEl.innerHTML = model.nextOutbound.slice(0, 12).map((row) => `<tr>
       <td>${escapeHtml(row.number || "—")}</td>
       <td>${escapeHtml(row.airline || "—")}</td>
       <td>${escapeHtml(row.origin || "—")} → ${escapeHtml(row.destination || "—")}</td>
@@ -547,7 +774,12 @@ function renderEarlyWarning() {
     </tr>`).join("");
   }
 
-  snapshotEl.innerHTML = `${escapeHtml(state.snapshotMeta.note || "History saving has not been configured yet.")}${state.snapshotMeta.pathname ? `<br><span class="tableSubMeta">Latest full snapshot: ${escapeHtml(state.snapshotMeta.pathname)}</span>` : ""}${state.snapshotMeta.dailyPathnames?.length ? `<br><span class="tableSubMeta">Daily service day records: ${escapeHtml(state.snapshotMeta.dailyPathnames.join(", "))}</span>` : ""}`;
+  const historyNote = state.raw?.historyMeta?.note ? `<br><span class="tableSubMeta">${escapeHtml(state.raw.historyMeta.note)}</span>` : "";
+  const dailyPaths = Array.isArray(state.snapshotMeta.dailyPathnames) && state.snapshotMeta.dailyPathnames.length
+    ? `<br><span class="tableSubMeta">Updated daily history: ${escapeHtml(state.snapshotMeta.dailyPathnames.join(", "))}</span>`
+    : "";
+  snapshotEl.innerHTML = `${escapeHtml(state.snapshotMeta.note || "Snapshot saving has not been configured yet.")}${state.snapshotMeta.pathname ? `<br><span class="tableSubMeta">Latest snapshot: ${escapeHtml(state.snapshotMeta.pathname)}</span>` : ""}${dailyPaths}${historyNote}`;
+  renderHistoryChart();
 }
 
 function renderStaleStatus() {
@@ -596,7 +828,7 @@ function buildInstructions() {
     <p><strong>How to use it</strong></p>
     <ul>
       <li><strong>Flights</strong> shows the live flight rows for the current scope.</li>
-      <li><strong>Early Warning</strong> compares tracked outbound departures against the same tracked baseline routes, so the usable and normal figures are directly comparable.</li>
+      <li><strong>Early Warning</strong> compares current usable outbound departures against a checked baseline for the same selected day window, using like for like logic in the summary cards.</li>
       <li><strong>Airlines</strong> groups the visible rows by carrier.</li>
       <li><strong>Airports</strong> shows a quick airport and hub overview.</li>
       <li><strong>Day</strong> switches between today, tomorrow, and all flights in the shared cached window.</li>
@@ -608,19 +840,21 @@ function buildInstructions() {
     <p><strong>How to read the board</strong></p>
     <ul>
       <li><strong>PAX</strong> means estimated passengers. It is not a booking count. It is a seat estimate based on aircraft type multiplied by the selected load factor.</li>
-      <li><strong>Cancelled</strong> and <strong>Delayed >60m</strong> tiles highlight material disruption. Cancelled lights red when cancellations are present. Delayed over 60 minutes lights amber when present.</li>
-      <li>The sub line under each flight uses the aircraft type, airline code, load factor, and estimated PAX. The Airline column shows the full carrier name.</li>
+      <li><strong>Cancelled</strong> and <strong>Delayed &gt;60m</strong> tiles highlight material disruption.</li>
       <li><strong>Fresh</strong>, <strong>Warning</strong>, and <strong>Stale</strong> are based on the age of the shared cached dataset for the current scope, not when your browser tab opened.</li>
     </ul>
 
     <p><strong>How to read Early Warning</strong></p>
     <ul>
       <li>The Early Warning view focuses on practical outbound hub options rather than every flight equally.</li>
-      <li><strong>Usable</strong> means a key hub departure that is not cancelled, not diverted, and not delayed more than 60 minutes.</li>
-      <li><strong>Normal expected in window</strong> is the published weekly baseline converted into the same selected day window used by the tracked usable count.</li>
-      <li>A tightening or low signal means the current usable tracked options are materially below the normal expected level for the selected scope and day window.</li>
-      <li>When Blob is enabled, the app saves both a full refresh snapshot and a slimmer daily tracked record keyed by Pakistan service date and day of week, including weekends.</li>
-    </ul>`;
+      <li><strong>From</strong> shows which Pakistan airport the route leaves from.</li>
+      <li><strong>Usable</strong> means a departure that is not cancelled, not diverted, and not delayed more than 60 minutes.</li>
+      <li><strong>Normal expected in window</strong> now uses a checked baseline route by route. Where current weekday slot timings were verified with confidence, those exact day slots are used. Where the timetable was less clear, the board uses a checked weekly frequency fallback rather than pretending to know an exact day pattern.</li>
+      <li>Only routes that have now been reviewed are shown in Early Warning. This keeps the table tighter but more trustworthy.</li>
+      <li>The coverage card matters. If the source signalled more pages than were pulled, current scheduled counts may still be understated even when the baseline is correct.</li>
+      <li>As Blob snapshot history builds up, the rolling baseline can gradually replace some weekly fallbacks with observed operating patterns from your own stored data.</li>
+    </ul>
+  `;
 }
 
 function buildBriefReadout() {
@@ -633,7 +867,7 @@ function buildBriefReadout() {
     if (p !== 0) return p;
     return Number(b.delayMinutes || 0) - Number(a.delayMinutes || 0);
   }).slice(0, 8);
-  const nextOutboundHubs = getUpcomingUsableOutbound(24, true).slice(0, 8);
+  const nextOutboundHubs = getUpcomingUsableOutbound(24).slice(0, 8);
   const cancelledPax = cancelled.reduce((sum, f) => sum + estimatePax(f), 0);
   const delayedPax = delayed.reduce((sum, f) => sum + estimatePax(f), 0);
   const divertedPax = diverted.reduce((sum, f) => sum + estimatePax(f), 0);
@@ -642,13 +876,13 @@ function buildBriefReadout() {
     <p><strong>Current scope:</strong> ${escapeHtml(state.scopeLabel)}.</p>
     <p><strong>Current filtered board:</strong> ${rows.length} flights.</p>
     <p><strong>Data age:</strong> ${Math.floor(getDataAgeSeconds() / 60)} minutes.</p>
-    <p><strong>Early warning signal:</strong> ${warning.signal}. Usable tracked departures in the selected window: ${warning.usableTrackedWindow}. Estimated usable tracked PAX in the same window: ~${formatNumber(warning.usableTrackedPaxWindow)}.</p>
+    <p><strong>Early warning signal:</strong> ${warning.signal}. Usable key hub departures in next 12 hours: ${warning.upcoming12.length}. Estimated usable PAX in next 12 hours: ~${formatNumber(warning.usablePax12)}. Coverage: ${warning.coverage.label}. ${warning.coverage.detail}</p>
     <p><strong>Disruption picture:</strong> ${cancelled.length} cancelled, ${diverted.length} diverted, ${delayed.length} delayed over 60 minutes.</p>
     <p><strong>Estimated affected passengers:</strong> ~${formatNumber(cancelledPax)} cancelled PAX, ~${formatNumber(divertedPax)} diverted PAX, ~${formatNumber(delayedPax)} delayed PAX.</p>
     <p><strong>Most severe rows:</strong></p>
     <ul>${severe.length ? severe.map((r) => `<li>${r.number} ${r.airline} ${r.origin} to ${r.destination} ${disruptionLabel(r)} ~${formatNumber(estimatePax(r))} PAX</li>`).join("") : "<li>No severe disruption rows in the current scope.</li>"}</ul>
-    <p><strong>Next usable tracked outbound options:</strong></p>
-    <ul>${nextOutboundHubs.length ? nextOutboundHubs.map((r) => `<li>${r.number} ${r.airline} ${r.origin} to ${r.destination} at ${displayTime(bestDepTime(r) || r.scheduledDep)} showing ${r.status} ~${formatNumber(estimatePax(r))} PAX</li>`).join("") : "<li>No usable tracked departures shown in the next 24 hours for the current scope.</li>"}</ul>`;
+    <p><strong>Next usable outbound options to key hubs:</strong></p>
+    <ul>${nextOutboundHubs.length ? nextOutboundHubs.map((r) => `<li>${r.number} ${r.airline} ${r.origin} to ${r.destination} at ${displayTime(bestDepTime(r) || r.scheduledDep)} showing ${r.status} ~${formatNumber(estimatePax(r))} PAX</li>`).join("") : "<li>No usable key hub departures shown in the next 24 hours for the current scope.</li>"}</ul>`;
 }
 
 function buildAirlineStatus() {

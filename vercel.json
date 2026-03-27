@@ -1,14 +1,3 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "cleanUrls": true,
-  "rewrites": [
-    {
-      "source": "/api/collect-normal",
-      "destination": "/api/flights?collect=1&mode=normal"
-    },
-    {
-      "source": "/api/collect-crisis",
-      "destination": "/api/flights?collect=1&mode=crisis"
-    }
-  ]
+  "cleanUrls": true
 }

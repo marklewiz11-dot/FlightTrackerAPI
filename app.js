@@ -58,6 +58,11 @@ const HUB_NAMES = {
 };
 
 const PAKISTAN_AIRPORT_NAMES = { ISB: "Islamabad", LHE: "Lahore", KHI: "Karachi" };
+function currentScopeLabel() {
+  const code = String(state.airport || "ALL").toUpperCase();
+  if (code === "ALL") return "All airports";
+  return PAKISTAN_AIRPORT_NAMES[code] || code;
+}
 
 const AIRCRAFT_CAPACITY = {
   A20N: 180, A20: 180, A319: 144, A320: 180, A321: 220, A21N: 220,

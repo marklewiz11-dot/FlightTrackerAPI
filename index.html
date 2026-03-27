@@ -41,6 +41,14 @@
           <span class="stalePill staleFresh" id="staleStatus">Fresh</span>
         </div>
 
+        <div class="timeRefWrap compactTopCard modeWrap">
+          <span class="timeRefLabel">Data mode</span>
+          <div class="timeToggle">
+            <button class="timeBtn modeBtn active" data-mode="normal">Normal</button>
+            <button class="timeBtn modeBtn" data-mode="crisis">Crisis</button>
+          </div>
+        </div>
+
         <button class="iconBtn" id="pauseRefreshBtn" title="Pause refresh">❚❚</button>
 
         <div class="timeRefWrap compactTopCard">
@@ -77,9 +85,9 @@
         <div class="filterGroup filterWide dayFilterGroup">
           <label>Day</label>
           <div class="segmented">
-            <button class="seg active" data-day="today">Today</button>
+            <button class="seg" data-day="today">Today</button>
             <button class="seg" data-day="tomorrow">Tomorrow</button>
-            <button class="seg" data-day="all">All</button>
+            <button class="seg active" data-day="all">All</button>
           </div>
         </div>
 
@@ -210,8 +218,15 @@
         <div class="warningSection">
           <div class="airportSectionTitle">Tracked Airline History</div>
           <div class="historyToolbar">
-            <button class="seg active" id="historyDayBtn">Day</button>
-            <button class="seg" id="historyWeekBtn">Week</button>
+            <div class="historyToggleGroup">
+              <button class="seg active" id="historyDayBtn">Day</button>
+              <button class="seg" id="historyWeekBtn">Week</button>
+            </div>
+            <div class="historyToggleGroup">
+              <button class="seg historyAirportBtn active" data-history-airport="ISB">Islamabad</button>
+              <button class="seg historyAirportBtn" data-history-airport="LHE">Lahore</button>
+              <button class="seg historyAirportBtn" data-history-airport="KHI">Karachi</button>
+            </div>
           </div>
           <div id="historyChart" class="historyChartWrap"></div>
           <div id="historyChartMeta" class="tableSubMeta"></div>
@@ -287,5 +302,21 @@
   </div>
 
   <script src="/app.js"></script>
+  <div class="modal hidden" id="crisisConfirmModal">
+    <div class="modalCard">
+      <div class="modalHead">
+        <div class="modalTitle">Switch to Crisis mode?</div>
+        <button class="closeBtn" id="closeCrisisConfirmBtn">Close</button>
+      </div>
+      <div class="briefingBody" id="crisisConfirmBody">
+        <p><strong>Crisis mode uses live FlightAware pulls and costs materially more than Normal mode.</strong></p>
+        <p>Use it when you need live operational monitoring, not just the latest saved collector dataset.</p>
+        <div class="modalActions">
+          <button class="topbarBtn" id="cancelCrisisBtn">Stay in Normal</button>
+          <button class="topbarBtn topbarBtnWarning" id="confirmCrisisBtn">Enter Crisis mode</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

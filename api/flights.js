@@ -1,5 +1,5 @@
 export default async function handler(req, res) {
-  const apiKey = "hn1UO6XF9P3DrZPwMPi5ABgWXEV3wrvF";
+  const apiKey = process.env.FLIGHTAWARE_API_KEY || "PASTE_YOUR_FLIGHTAWARE_KEY_HERE";
   const base = "https://aeroapi.flightaware.com/aeroapi";
   const DEFAULT_CACHE_SECONDS = 3600;
   const BROWSER_CACHE_SECONDS = 0;
@@ -380,7 +380,7 @@ export default async function handler(req, res) {
     return { key: "ISB", airportIds: ["OPIS"], pageLimitMap: { OPIS: limits.OPIS }, label: "Islamabad default" };
   }
 
-  function buildCoverageMeta(byAirport, fetchPlan = { includeArrivals: true, includeDepartures: true }) {
+  function buildCoverageMeta(byAirport) {
     const airportEntries = Object.entries(byAirport || {});
     const departureEntries = airportEntries.map(([airportCode, info]) => ({ airportCode, ...(info.departures || {}) }));
     const arrivalEntries = airportEntries.map(([airportCode, info]) => ({ airportCode, ...(info.arrivals || {}) }));
@@ -389,29 +389,23 @@ export default async function handler(req, res) {
     return {
       byAirport,
       departures: {
-        collected: Boolean(fetchPlan.includeDepartures),
-        truncatedPossible: Boolean(fetchPlan.includeDepartures) && anyDepartureTruncated,
+        truncatedPossible: anyDepartureTruncated,
         returnedCount: departureEntries.reduce((sum, item) => sum + Number(item.returnedCount || 0), 0),
-        note: !fetchPlan.includeDepartures
-          ? "Departures were not collected in this run."
-          : anyDepartureTruncated
-            ? "Additional departure pages exist beyond the configured page cap, so scheduled counts may be understated."
-            : "No extra departure page was signalled by the source pull."
+        note: anyDepartureTruncated
+          ? "Additional departure pages exist beyond the configured page cap, so scheduled counts may be understated."
+          : "No extra departure page was signalled by the source pull."
       },
       arrivals: {
-        collected: Boolean(fetchPlan.includeArrivals),
-        truncatedPossible: Boolean(fetchPlan.includeArrivals) && anyArrivalTruncated,
+        truncatedPossible: anyArrivalTruncated,
         returnedCount: arrivalEntries.reduce((sum, item) => sum + Number(item.returnedCount || 0), 0),
-        note: !fetchPlan.includeArrivals
-          ? "Arrivals were intentionally skipped in this run to keep collection cost lower."
-          : anyArrivalTruncated
-            ? "Additional arrival pages exist beyond the configured page cap."
-            : "No extra arrival page was signalled by the source pull."
+        note: anyArrivalTruncated
+          ? "Additional arrival pages exist beyond the configured page cap."
+          : "No extra arrival page was signalled by the source pull."
       }
     };
   }
 
-  async function fetchWindowForAirports(airportIds, start, end, pageLimitMap, fetchPlan = { includeArrivals: true, includeDepartures: true }) {
+  async function fetchWindowForAirports(airportIds, start, end, pageLimitMap) {
     const allFlights = [];
     const coverageByAirport = {};
     for (const airportId of airportIds) {
@@ -419,38 +413,21 @@ export default async function handler(req, res) {
       const maxPages = pageLimitMap[airportId] || 1;
       const arrivalsUrl = `${base}/airports/${airportId}/flights/scheduled_arrivals?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=${maxPages}`;
       const departuresUrl = `${base}/airports/${airportId}/flights/scheduled_departures?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=${maxPages}`;
-
-      let arrivals = [];
-      let departures = [];
-      let arrivalsMeta = { returnedCount: 0, numPagesReturned: 0, truncatedPossible: false, skipped: !fetchPlan.includeArrivals };
-      let departuresMeta = { returnedCount: 0, numPagesReturned: 0, truncatedPossible: false, skipped: !fetchPlan.includeDepartures };
-
-      if (fetchPlan.includeArrivals && fetchPlan.includeDepartures) {
-        const [arrivalsResult, departuresResult] = await Promise.all([
-          getJsonWithMeta(arrivalsUrl, "scheduled_arrivals"),
-          getJsonWithMeta(departuresUrl, "scheduled_departures")
-        ]);
-        arrivalsMeta = arrivalsResult.meta;
-        departuresMeta = departuresResult.meta;
-        arrivals = dedupe(Array.isArray(arrivalsResult.json.scheduled_arrivals) ? arrivalsResult.json.scheduled_arrivals.map((f) => serialiseArrival(f, airport)) : []);
-        departures = dedupe(Array.isArray(departuresResult.json.scheduled_departures) ? departuresResult.json.scheduled_departures.map((f) => serialiseDeparture(f, airport)) : []);
-      } else if (fetchPlan.includeDepartures) {
-        const departuresResult = await getJsonWithMeta(departuresUrl, "scheduled_departures");
-        departuresMeta = departuresResult.meta;
-        departures = dedupe(Array.isArray(departuresResult.json.scheduled_departures) ? departuresResult.json.scheduled_departures.map((f) => serialiseDeparture(f, airport)) : []);
-      } else if (fetchPlan.includeArrivals) {
-        const arrivalsResult = await getJsonWithMeta(arrivalsUrl, "scheduled_arrivals");
-        arrivalsMeta = arrivalsResult.meta;
-        arrivals = dedupe(Array.isArray(arrivalsResult.json.scheduled_arrivals) ? arrivalsResult.json.scheduled_arrivals.map((f) => serialiseArrival(f, airport)) : []);
-      }
-
+      const [arrivalsResult, departuresResult] = await Promise.all([
+        getJsonWithMeta(arrivalsUrl, "scheduled_arrivals"),
+        getJsonWithMeta(departuresUrl, "scheduled_departures")
+      ]);
+      const arrivalsRaw = arrivalsResult.json;
+      const departuresRaw = departuresResult.json;
+      const arrivals = dedupe(Array.isArray(arrivalsRaw.scheduled_arrivals) ? arrivalsRaw.scheduled_arrivals.map((f) => serialiseArrival(f, airport)) : []);
+      const departures = dedupe(Array.isArray(departuresRaw.scheduled_departures) ? departuresRaw.scheduled_departures.map((f) => serialiseDeparture(f, airport)) : []);
       coverageByAirport[airport.code] = {
-        arrivals: { ...arrivalsMeta, maxPagesRequested: maxPages, uniqueCount: arrivals.length },
-        departures: { ...departuresMeta, maxPagesRequested: maxPages, uniqueCount: departures.length }
+        arrivals: { ...arrivalsResult.meta, maxPagesRequested: maxPages, uniqueCount: arrivals.length },
+        departures: { ...departuresResult.meta, maxPagesRequested: maxPages, uniqueCount: departures.length }
       };
       allFlights.push(...arrivals, ...departures);
     }
-    return { flights: dedupe(allFlights), coverageMeta: buildCoverageMeta(coverageByAirport, fetchPlan) };
+    return { flights: dedupe(allFlights), coverageMeta: buildCoverageMeta(coverageByAirport) };
   }
 
   function buildSnapshotSummary(scope, flights, generatedAt, coverageMeta) {
@@ -578,7 +555,7 @@ export default async function handler(req, res) {
       return {
         enabled: true,
         saved: true,
-        note: "This fresh shared refresh saved a full snapshot and updated slimmer service day files. Cached views inside the shared window reuse this saved refresh rather than writing another record.",
+        note: "Latest refresh snapshot saved. A slimmer service day record is also updated by day of week including weekends, so repeat hourly refreshes do not inflate the comparison history.",
         recentCount,
         pathname,
         dailyPathnames
@@ -793,11 +770,9 @@ export default async function handler(req, res) {
     const generatedAt = new Date().toISOString();
     const mode = resolveMode(req.query?.mode);
     const requestedScope = req.query?.airport || req.query?.scope || "ALL";
-    const fetchPlan = { includeArrivals: true, includeDepartures: true };
-    const effectiveScope = mode.key === "normal" ? "ALL" : requestedScope;
-    const scope = resolveScope(effectiveScope, mode);
+    const scope = resolveScope(requestedScope, mode);
     const { start, end } = getBroadPakistanWindow();
-    const { flights: dedupedFlights, coverageMeta } = await fetchWindowForAirports(scope.airportIds, start, end, scope.pageLimitMap, fetchPlan);
+    const { flights: dedupedFlights, coverageMeta } = await fetchWindowForAirports(scope.airportIds, start, end, scope.pageLimitMap);
     dedupedFlights.sort((a, b) => {
       const aTime = toMillis(a.bestDep || a.bestArr || a.scheduledDep || a.scheduledArr) || 0;
       const bTime = toMillis(b.bestDep || b.bestArr || b.scheduledDep || b.scheduledArr) || 0;
@@ -807,25 +782,11 @@ export default async function handler(req, res) {
     const snapshotSummary = buildSnapshotSummary(scope, flightsWithPax, generatedAt, coverageMeta);
     const dailyRecords = buildDailyHistoryRecords(scope, snapshotSummary);
     const snapshotMeta = await saveSnapshot(scope, snapshotSummary, dailyRecords);
-   const historyMeta = {
-  enabled: false,
-  recentSnapshots: 0,
-  serviceDays: 0,
-  note: "History loading deferred until Early Warning tab is opened.",
-  rollingByRouteWeekday: {},
-  timelineMeta: { airlineDaily: [], airlineWeekly: [] }
-};
-    const responsePayload = {
+    const historyMeta = await loadRollingHistory(scope);
+    return sendJson(200, {
       generatedAt,
       cacheSeconds: mode.cacheSeconds,
-      modeMeta: {
-        key: mode.key,
-        label: mode.label,
-        note: mode.note,
-        pageDepthByAirport: mode.pageDepthByAirport,
-        fetchPlan,
-        dataSource: "live"
-      },
+      modeMeta: { key: mode.key, label: mode.label, note: mode.note, pageDepthByAirport: mode.pageDepthByAirport, dataSource: "live" },
       scope: scope.key,
       scopeLabel: scope.label,
       snapshotMeta,
@@ -839,8 +800,7 @@ export default async function handler(req, res) {
       },
       flights: dedupedFlights,
       warnings: []
-    };
-    return sendJson(200, responsePayload, mode.cacheSeconds);
+    }, mode.cacheSeconds);
   } catch (error) {
     const generatedAt = new Date().toISOString();
     const mode = resolveMode(req.query?.mode);
@@ -848,8 +808,8 @@ export default async function handler(req, res) {
       generatedAt,
       cacheSeconds: mode.cacheSeconds,
       modeMeta: { key: mode.key, label: mode.label, note: mode.note, pageDepthByAirport: mode.pageDepthByAirport, dataSource: "live" },
-      scope: "ALL",
-      scopeLabel: "All airports",
+      scope: "ISB",
+      scopeLabel: "Islamabad default",
       snapshotMeta: { enabled: false, saved: false, note: "Snapshot saving unavailable because the flight refresh failed.", recentCount: null, dailyPathnames: [] },
       coverageMeta: { departures: { truncatedPossible: false, returnedCount: 0, note: "Coverage unavailable because the flight refresh failed." }, arrivals: { truncatedPossible: false, returnedCount: 0, note: "Coverage unavailable because the flight refresh failed." }, byAirport: {} },
       historyMeta: { enabled: false, recentSnapshots: 0, serviceDays: 0, note: "Rolling baseline unavailable because the flight refresh failed.", rollingByRouteWeekday: {}, timelineMeta: { airlineDaily: [], airlineWeekly: [] } },

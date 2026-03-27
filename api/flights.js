@@ -807,7 +807,14 @@ export default async function handler(req, res) {
     const snapshotSummary = buildSnapshotSummary(scope, flightsWithPax, generatedAt, coverageMeta);
     const dailyRecords = buildDailyHistoryRecords(scope, snapshotSummary);
     const snapshotMeta = await saveSnapshot(scope, snapshotSummary, dailyRecords);
-    const historyMeta = await loadRollingHistory(scope);
+   const historyMeta = {
+  enabled: false,
+  recentSnapshots: 0,
+  serviceDays: 0,
+  note: "History loading deferred until Early Warning tab is opened.",
+  rollingByRouteWeekday: {},
+  timelineMeta: { airlineDaily: [], airlineWeekly: [] }
+};
     const responsePayload = {
       generatedAt,
       cacheSeconds: mode.cacheSeconds,

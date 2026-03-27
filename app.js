@@ -333,8 +333,14 @@ function dayFilteredRows(rows) {
   });
 }
 
+function airportScopedRows(rows) {
+  if (state.airport === "ALL") return rows;
+  return rows.filter((r) => String(r.airportCode || r.origin || "").toUpperCase() === state.airport);
+}
+
 function applyFilters(rows) {
   let out = [...rows];
+  out = airportScopedRows(out);
   out = dayFilteredRows(out);
   if (state.direction !== "Both") out = out.filter((r) => r.direction === state.direction);
   if (state.airline !== "All") out = out.filter((r) => r.airline === state.airline);
@@ -343,7 +349,7 @@ function applyFilters(rows) {
 }
 
 function getEarlyWarningRows() {
-  return dayFilteredRows(baseClientFilteredRows());
+  return dayFilteredRows(airportScopedRows(baseClientFilteredRows()));
 }
 
 function getBaselineEntriesForScope() {
@@ -913,10 +919,10 @@ function buildBriefReadout() {
   const divertedPax = diverted.reduce((sum, f) => sum + estimatePax(f), 0);
   const warning = getEarlyWarningModel();
   return `
-    <p><strong>Current scope:</strong> ${escapeHtml(state.scopeLabel)}.</p>
+    <p><strong>Current scope:</strong> ${escapeHtml(currentScopeLabel())}.</p>
     <p><strong>Current filtered board:</strong> ${rows.length} flights.</p>
     <p><strong>Data age:</strong> ${Math.floor(getDataAgeSeconds() / 60)} minutes.</p>
-    <p><strong>Early warning signal:</strong> ${warning.signal}. Usable key hub departures in next 12 hours: ${warning.upcoming12.length}. Estimated usable PAX in next 12 hours: ~${formatNumber(warning.usablePax12)}. Coverage: ${warning.coverage.label}. ${warning.coverage.detail}</p>
+    <p><strong>Early warning signal:</strong> ${warning.signal}. Usable tracked departures in selected window: ${warning.baseline.usableTotal}. Estimated usable PAX in selected window: ~${formatNumber(warning.usablePaxWindow)}. Next usable tracked departures in 24 hours: ${warning.nextOutbound.length}. Coverage: ${warning.coverage.label}. ${warning.coverage.detail}</p>
     <p><strong>Disruption picture:</strong> ${cancelled.length} cancelled, ${diverted.length} diverted, ${delayed.length} delayed over 60 minutes.</p>
     <p><strong>Estimated affected passengers:</strong> ~${formatNumber(cancelledPax)} cancelled PAX, ~${formatNumber(divertedPax)} diverted PAX, ~${formatNumber(delayedPax)} delayed PAX.</p>
     <p><strong>Most severe rows:</strong></p>
@@ -991,12 +997,12 @@ function startCacheTimer() {
 
 async function load(isBackground = false) {
   try {
-    const res = await fetch(`/api/flights?airport=${encodeURIComponent(state.airport)}&mode=${encodeURIComponent(state.mode)}`);
+    const res = await fetch(`/api/flights?airport=ALL&mode=${encodeURIComponent(state.mode)}`);
     const data = await res.json();
     if (!res.ok) throw new Error(data?.warnings?.[0] || "Failed to load board data.");
     state.raw = data;
     state.cacheSeconds = Number(data.cacheSeconds || DEFAULT_CACHE_SECONDS);
-    state.scopeLabel = data.scopeLabel || "All airports";
+    state.scopeLabel = currentScopeLabel();
     state.snapshotMeta = data.snapshotMeta || state.snapshotMeta;
     state.modeMeta = data.modeMeta || state.modeMeta;
     state.mode = data.modeMeta?.key || state.mode;
@@ -1122,7 +1128,7 @@ document.addEventListener("click", async (e) => {
 });
 
 document.getElementById("directionFilter").addEventListener("change", (e) => { state.direction = e.target.value; refreshView(); });
-document.getElementById("airportFilter").addEventListener("change", async (e) => { state.airport = e.target.value; state.airline = "All"; await load(false); });
+document.getElementById("airportFilter").addEventListener("change", (e) => { state.airport = e.target.value; state.scopeLabel = currentScopeLabel(); state.airline = "All"; refreshView(); });
 document.getElementById("airlineFilter").addEventListener("change", (e) => { state.airline = e.target.value; refreshView(); });
 document.getElementById("statusFilter").addEventListener("change", (e) => { state.status = e.target.value; refreshView(); });
 document.getElementById("minorCarrierToggle").addEventListener("change", (e) => { state.includeMinor = e.target.checked; state.airline = "All"; refreshView(); });
@@ -1139,6 +1145,7 @@ document.getElementById("resetFilters").addEventListener("click", async () => {
   state.includeMinor = false;
   state.loadFactor = 85;
   state.historyChartAirport = "ISB";
+  state.scopeLabel = currentScopeLabel();
   document.querySelectorAll(".seg[data-day]").forEach((x) => x.classList.toggle("active", x.dataset.day === "all"));
   document.getElementById("loadFactorSlider").value = "85";
   await load(false);

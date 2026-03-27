@@ -1,9 +1,27 @@
 export default async function handler(req, res) {
-  const apiKey = "hn1UO6XF9P3DrZPwMPi5ABgWXEV3wrvF";
+  const apiKey = "PASTE_YOUR_FLIGHTAWARE_KEY_HERE";
   const base = "https://aeroapi.flightaware.com/aeroapi";
-  const CACHE_SECONDS = 3600;
+  const DEFAULT_CACHE_SECONDS = 3600;
   const BROWSER_CACHE_SECONDS = 0;
   const KEY_HUBS = ["DOH", "DXB", "DWC", "AUH", "IST", "SAW", "JED", "RUH", "LHR", "LGW", "MCT", "BAH", "KWI", "BKK"];
+  const MODE_CONFIG = {
+    normal: {
+      key: "normal",
+      label: "Normal mode",
+      cacheSeconds: 8 * 60 * 60,
+      pageLimits: { OPIS: 6, OPLA: 3, OPKC: 3 },
+      collectorPageLimits: { OPIS: 6, OPLA: 3, OPKC: 3 },
+      note: "8 hour shared cache with deeper collection pages for low cost baseline building."
+    },
+    crisis: {
+      key: "crisis",
+      label: "Crisis mode",
+      cacheSeconds: 60 * 60,
+      pageLimits: { OPIS: 12, OPLA: 6, OPKC: 6 },
+      collectorPageLimits: { OPIS: 12, OPLA: 6, OPKC: 6 },
+      note: "1 hour shared cache with materially deeper pages for crisis monitoring."
+    }
+  };
 
   const AIRPORTS = {
     OPIS: { code: "ISB", name: "Islamabad" },
@@ -50,14 +68,14 @@ export default async function handler(req, res) {
     "UL", "ALK"
   ]);
 
-  function setCacheHeaders() {
+  function setCacheHeaders(cacheSeconds = DEFAULT_CACHE_SECONDS) {
     res.setHeader("Cache-Control", `public, max-age=${BROWSER_CACHE_SECONDS}, must-revalidate`);
-    res.setHeader("CDN-Cache-Control", `public, max-age=${CACHE_SECONDS}, stale-while-revalidate=60`);
-    res.setHeader("Vercel-CDN-Cache-Control", `public, max-age=${CACHE_SECONDS}, stale-while-revalidate=60`);
+    res.setHeader("CDN-Cache-Control", `public, max-age=${cacheSeconds}, stale-while-revalidate=60`);
+    res.setHeader("Vercel-CDN-Cache-Control", `public, max-age=${cacheSeconds}, stale-while-revalidate=60`);
   }
 
-  function sendJson(statusCode, payload) {
-    setCacheHeaders();
+  function sendJson(statusCode, payload, cacheSeconds = DEFAULT_CACHE_SECONDS) {
+    setCacheHeaders(cacheSeconds);
     if (payload && payload.generatedAt) res.setHeader("X-Data-Generated-At", payload.generatedAt);
     return res.status(statusCode).json(payload);
   }
@@ -342,15 +360,29 @@ export default async function handler(req, res) {
     return `${y}-${m}-${d}`;
   }
 
-  function resolveScope(scopeParam) {
-    const scope = String(scopeParam || "ISB").toUpperCase();
-    if (scope === "LHE") return { key: "LHE", airportIds: ["OPLA"], pageLimitMap: { OPLA: 1 }, label: "Lahore on demand" };
-    if (scope === "KHI") return { key: "KHI", airportIds: ["OPKC"], pageLimitMap: { OPKC: 1 }, label: "Karachi on demand" };
-    if (scope === "ALL") return { key: "ALL", airportIds: ["OPIS", "OPLA", "OPKC"], pageLimitMap: { OPIS: 3, OPLA: 1, OPKC: 1 }, label: "All airports with Lahore and Karachi on demand depth" };
-    return { key: "ISB", airportIds: ["OPIS"], pageLimitMap: { OPIS: 3 }, label: "Islamabad default" };
+  function resolveMode(modeParam) {
+    const key = String(modeParam || "normal").toLowerCase() === "crisis" ? "crisis" : "normal";
+    const config = MODE_CONFIG[key];
+    return {
+      ...config,
+      pageDepthByAirport: {
+        ISB: Number(config.pageLimits.OPIS || 0),
+        LHE: Number(config.pageLimits.OPLA || 0),
+        KHI: Number(config.pageLimits.OPKC || 0)
+      }
+    };
   }
 
-  function buildCoverageMeta(byAirport) {
+  function resolveScope(scopeParam, mode, useCollectorDepth = false) {
+    const scope = String(scopeParam || "ISB").toUpperCase();
+    const limits = useCollectorDepth ? mode.collectorPageLimits : mode.pageLimits;
+    if (scope === "LHE") return { key: "LHE", airportIds: ["OPLA"], pageLimitMap: { OPLA: limits.OPLA }, label: "Lahore on demand" };
+    if (scope === "KHI") return { key: "KHI", airportIds: ["OPKC"], pageLimitMap: { OPKC: limits.OPKC }, label: "Karachi on demand" };
+    if (scope === "ALL") return { key: "ALL", airportIds: ["OPIS", "OPLA", "OPKC"], pageLimitMap: { OPIS: limits.OPIS, OPLA: limits.OPLA, OPKC: limits.OPKC }, label: "All airports" };
+    return { key: "ISB", airportIds: ["OPIS"], pageLimitMap: { OPIS: limits.OPIS }, label: "Islamabad default" };
+  }
+
+  function buildCoverageMeta(byAirport, fetchPlan = { includeArrivals: true, includeDepartures: true }) {
     const airportEntries = Object.entries(byAirport || {});
     const departureEntries = airportEntries.map(([airportCode, info]) => ({ airportCode, ...(info.departures || {}) }));
     const arrivalEntries = airportEntries.map(([airportCode, info]) => ({ airportCode, ...(info.arrivals || {}) }));
@@ -359,23 +391,29 @@ export default async function handler(req, res) {
     return {
       byAirport,
       departures: {
-        truncatedPossible: anyDepartureTruncated,
+        collected: Boolean(fetchPlan.includeDepartures),
+        truncatedPossible: Boolean(fetchPlan.includeDepartures) && anyDepartureTruncated,
         returnedCount: departureEntries.reduce((sum, item) => sum + Number(item.returnedCount || 0), 0),
-        note: anyDepartureTruncated
-          ? "Additional departure pages exist beyond the configured page cap, so scheduled counts may be understated."
-          : "No extra departure page was signalled by the source pull."
+        note: !fetchPlan.includeDepartures
+          ? "Departures were not collected in this run."
+          : anyDepartureTruncated
+            ? "Additional departure pages exist beyond the configured page cap, so scheduled counts may be understated."
+            : "No extra departure page was signalled by the source pull."
       },
       arrivals: {
-        truncatedPossible: anyArrivalTruncated,
+        collected: Boolean(fetchPlan.includeArrivals),
+        truncatedPossible: Boolean(fetchPlan.includeArrivals) && anyArrivalTruncated,
         returnedCount: arrivalEntries.reduce((sum, item) => sum + Number(item.returnedCount || 0), 0),
-        note: anyArrivalTruncated
-          ? "Additional arrival pages exist beyond the configured page cap."
-          : "No extra arrival page was signalled by the source pull."
+        note: !fetchPlan.includeArrivals
+          ? "Arrivals were intentionally skipped in this run to keep collection cost lower."
+          : anyArrivalTruncated
+            ? "Additional arrival pages exist beyond the configured page cap."
+            : "No extra arrival page was signalled by the source pull."
       }
     };
   }
 
-  async function fetchWindowForAirports(airportIds, start, end, pageLimitMap) {
+  async function fetchWindowForAirports(airportIds, start, end, pageLimitMap, fetchPlan = { includeArrivals: true, includeDepartures: true }) {
     const allFlights = [];
     const coverageByAirport = {};
     for (const airportId of airportIds) {
@@ -383,21 +421,38 @@ export default async function handler(req, res) {
       const maxPages = pageLimitMap[airportId] || 1;
       const arrivalsUrl = `${base}/airports/${airportId}/flights/scheduled_arrivals?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=${maxPages}`;
       const departuresUrl = `${base}/airports/${airportId}/flights/scheduled_departures?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=${maxPages}`;
-      const [arrivalsResult, departuresResult] = await Promise.all([
-        getJsonWithMeta(arrivalsUrl, "scheduled_arrivals"),
-        getJsonWithMeta(departuresUrl, "scheduled_departures")
-      ]);
-      const arrivalsRaw = arrivalsResult.json;
-      const departuresRaw = departuresResult.json;
-      const arrivals = dedupe(Array.isArray(arrivalsRaw.scheduled_arrivals) ? arrivalsRaw.scheduled_arrivals.map((f) => serialiseArrival(f, airport)) : []);
-      const departures = dedupe(Array.isArray(departuresRaw.scheduled_departures) ? departuresRaw.scheduled_departures.map((f) => serialiseDeparture(f, airport)) : []);
+
+      let arrivals = [];
+      let departures = [];
+      let arrivalsMeta = { returnedCount: 0, numPagesReturned: 0, truncatedPossible: false, skipped: !fetchPlan.includeArrivals };
+      let departuresMeta = { returnedCount: 0, numPagesReturned: 0, truncatedPossible: false, skipped: !fetchPlan.includeDepartures };
+
+      if (fetchPlan.includeArrivals && fetchPlan.includeDepartures) {
+        const [arrivalsResult, departuresResult] = await Promise.all([
+          getJsonWithMeta(arrivalsUrl, "scheduled_arrivals"),
+          getJsonWithMeta(departuresUrl, "scheduled_departures")
+        ]);
+        arrivalsMeta = arrivalsResult.meta;
+        departuresMeta = departuresResult.meta;
+        arrivals = dedupe(Array.isArray(arrivalsResult.json.scheduled_arrivals) ? arrivalsResult.json.scheduled_arrivals.map((f) => serialiseArrival(f, airport)) : []);
+        departures = dedupe(Array.isArray(departuresResult.json.scheduled_departures) ? departuresResult.json.scheduled_departures.map((f) => serialiseDeparture(f, airport)) : []);
+      } else if (fetchPlan.includeDepartures) {
+        const departuresResult = await getJsonWithMeta(departuresUrl, "scheduled_departures");
+        departuresMeta = departuresResult.meta;
+        departures = dedupe(Array.isArray(departuresResult.json.scheduled_departures) ? departuresResult.json.scheduled_departures.map((f) => serialiseDeparture(f, airport)) : []);
+      } else if (fetchPlan.includeArrivals) {
+        const arrivalsResult = await getJsonWithMeta(arrivalsUrl, "scheduled_arrivals");
+        arrivalsMeta = arrivalsResult.meta;
+        arrivals = dedupe(Array.isArray(arrivalsResult.json.scheduled_arrivals) ? arrivalsResult.json.scheduled_arrivals.map((f) => serialiseArrival(f, airport)) : []);
+      }
+
       coverageByAirport[airport.code] = {
-        arrivals: { ...arrivalsResult.meta, maxPagesRequested: maxPages, uniqueCount: arrivals.length },
-        departures: { ...departuresResult.meta, maxPagesRequested: maxPages, uniqueCount: departures.length }
+        arrivals: { ...arrivalsMeta, maxPagesRequested: maxPages, uniqueCount: arrivals.length },
+        departures: { ...departuresMeta, maxPagesRequested: maxPages, uniqueCount: departures.length }
       };
       allFlights.push(...arrivals, ...departures);
     }
-    return { flights: dedupe(allFlights), coverageMeta: buildCoverageMeta(coverageByAirport) };
+    return { flights: dedupe(allFlights), coverageMeta: buildCoverageMeta(coverageByAirport, fetchPlan) };
   }
 
   function buildSnapshotSummary(scope, flights, generatedAt, coverageMeta) {
@@ -484,10 +539,32 @@ export default async function handler(req, res) {
       }));
   }
 
-  async function saveSnapshot(scope, summary, dailyRecords) {
+  function isCollectorRequest() {
+    return String(req.query?.collect || "0") === "1" || Boolean(req.headers["x-vercel-cron"]);
+  }
+
+  function isCollectorAuthorised() {
+    if (!isCollectorRequest()) return true;
+    if (req.headers["x-vercel-cron"]) return true;
+    const requiredSecret = process.env.COLLECT_SECRET;
+    if (!requiredSecret) return true;
+    const providedSecret = String(req.query?.secret || req.headers["x-collect-secret"] || "");
+    return providedSecret === requiredSecret;
+  }
+
+  async function saveSnapshot(scope, summary, dailyRecords, collectionMeta) {
     const tokenPresent = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
     if (!tokenPresent) {
       return { enabled: false, saved: false, note: "Snapshot saving is ready but not active. Add a private Vercel Blob store and BLOB_READ_WRITE_TOKEN to start collecting history.", recentCount: null, dailyPathnames: [] };
+    }
+    if (!collectionMeta?.collectRequested) {
+      return {
+        enabled: true,
+        saved: false,
+        recentCount: null,
+        dailyPathnames: [],
+        note: "History collection is collector driven in this build. This dashboard refresh did not write a new snapshot. Use the collector URL on your schedule instead."
+      };
     }
     try {
       const sdk = await import("@vercel/blob");
@@ -525,13 +602,54 @@ export default async function handler(req, res) {
       return {
         enabled: true,
         saved: true,
-        note: "Latest refresh snapshot saved. A slimmer service day record is also updated by day of week including weekends, so repeat hourly refreshes do not inflate the comparison history.",
+        note: `Collector run saved a full snapshot and refreshed slimmer service day files for ${collectionMeta.modeLabel}.`,
         recentCount,
         pathname,
         dailyPathnames
       };
     } catch (error) {
       return { enabled: true, saved: false, note: error?.message || "Snapshot save failed.", recentCount: null, dailyPathnames: [] };
+    }
+  }
+
+
+  async function saveLatestBoardData(scope, payload, collectionMeta) {
+    const tokenPresent = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+    if (!tokenPresent || !collectionMeta?.collectRequested) {
+      return { saved: false, pathname: null };
+    }
+    try {
+      const sdk = await import("@vercel/blob");
+      if (!sdk?.put) return { saved: false, pathname: null };
+      const pathname = `latest/flight-tracker/${scope.key}/${collectionMeta.modeKey}.json`;
+      await sdk.put(pathname, JSON.stringify(payload, null, 2), {
+        access: "private",
+        addRandomSuffix: false,
+        allowOverwrite: true,
+        contentType: "application/json",
+        cacheControlMaxAge: 60
+      });
+      return { saved: true, pathname };
+    } catch {
+      return { saved: false, pathname: null };
+    }
+  }
+
+  async function loadLatestBoardData(modeKey = "normal") {
+    const tokenPresent = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+    if (!tokenPresent) return null;
+    try {
+      const sdk = await import("@vercel/blob");
+      if (!sdk?.get) return null;
+      const pathname = `latest/flight-tracker/ALL/${modeKey}.json`;
+      const result = await sdk.get(pathname, { access: "private" });
+      if (!result || result.statusCode !== 200) return null;
+      const text = await new Response(result.stream).text();
+      const parsed = JSON.parse(text);
+      parsed.latestBoardPath = pathname;
+      return parsed;
+    } catch {
+      return null;
     }
   }
 
@@ -738,10 +856,62 @@ export default async function handler(req, res) {
 
   try {
     const generatedAt = new Date().toISOString();
-    const requestedScope = req.query?.airport || req.query?.scope || "ISB";
-    const scope = resolveScope(requestedScope);
+    const mode = resolveMode(req.query?.mode);
+    const collectRequested = isCollectorRequest();
+    if (collectRequested && !isCollectorAuthorised()) {
+      return sendJson(401, {
+        generatedAt,
+        cacheSeconds: mode.cacheSeconds,
+        modeMeta: { key: mode.key, label: mode.label, note: mode.note, pageDepthByAirport: mode.pageDepthByAirport, collectRequested: true },
+        snapshotMeta: { enabled: false, saved: false, note: "Collector request blocked because the provided COLLECT_SECRET did not match.", recentCount: null, dailyPathnames: [] },
+        coverageMeta: { departures: { truncatedPossible: false, returnedCount: 0, note: "Coverage unavailable because the collector request was not authorised." }, arrivals: { truncatedPossible: false, returnedCount: 0, note: "Coverage unavailable because the collector request was not authorised." }, byAirport: {} },
+        historyMeta: { enabled: false, recentSnapshots: 0, serviceDays: 0, note: "Rolling baseline not loaded because the collector request was not authorised.", rollingByRouteWeekday: {}, timelineMeta: { airlineDaily: [], airlineWeekly: [] } },
+        filtersMeta: { airports: ["ISB", "LHE", "KHI", "ALL"], airlines: [], statuses: [], directions: [] },
+        flights: [],
+        warnings: ["Collector request not authorised."]
+      }, mode.cacheSeconds);
+    }
+    const requestedScope = req.query?.airport || req.query?.scope || "ALL";
+
+    if (!collectRequested && mode.key === "normal") {
+      const savedBoard = await loadLatestBoardData(mode.key);
+      if (savedBoard) {
+        const savedScope = resolveScope("ALL", mode, false);
+        const historyMeta = await loadRollingHistory(savedScope);
+        return sendJson(200, {
+          ...savedBoard,
+          cacheSeconds: mode.cacheSeconds,
+          modeMeta: {
+            ...(savedBoard.modeMeta || {}),
+            key: mode.key,
+            label: mode.label,
+            note: "Normal mode serves the latest saved collector dataset by default. No fresh FlightAware pull was made for this board view.",
+            pageDepthByAirport: mode.pageDepthByAirport,
+            collectRequested: false,
+            dataSource: "saved",
+            collectorUrlHint: "/api/collect-normal",
+            crisisCollectorUrlHint: "/api/collect-crisis"
+          },
+          scope: "ALL",
+          scopeLabel: "All airports from latest saved collector dataset",
+          snapshotMeta: {
+            ...(savedBoard.snapshotMeta || {}),
+            note: "Showing the latest saved collector dataset. Normal mode does not make a fresh live FlightAware pull by default.",
+            latestBoardPath: savedBoard.latestBoardPath || savedBoard.snapshotMeta?.latestBoardPath || null
+          },
+          historyMeta,
+          warnings: Array.isArray(savedBoard.warnings) ? savedBoard.warnings : []
+        }, mode.cacheSeconds);
+      }
+    }
+
+    const fetchPlan = collectRequested
+      ? { includeArrivals: String(req.query?.includeArrivals || "0") === "1", includeDepartures: true }
+      : { includeArrivals: true, includeDepartures: true };
+    const effectiveScope = (!collectRequested && mode.key === "normal") ? "ALL" : requestedScope;
+    const scope = resolveScope(effectiveScope, mode, collectRequested);
     const { start, end } = getBroadPakistanWindow();
-    const { flights: dedupedFlights, coverageMeta } = await fetchWindowForAirports(scope.airportIds, start, end, scope.pageLimitMap);
+    const { flights: dedupedFlights, coverageMeta } = await fetchWindowForAirports(scope.airportIds, start, end, scope.pageLimitMap, fetchPlan);
     dedupedFlights.sort((a, b) => {
       const aTime = toMillis(a.bestDep || a.bestArr || a.scheduledDep || a.scheduledArr) || 0;
       const bTime = toMillis(b.bestDep || b.bestArr || b.scheduledDep || b.scheduledArr) || 0;
@@ -750,11 +920,27 @@ export default async function handler(req, res) {
     const flightsWithPax = dedupedFlights.map((f) => ({ ...f, estimatedPax: 0 }));
     const snapshotSummary = buildSnapshotSummary(scope, flightsWithPax, generatedAt, coverageMeta);
     const dailyRecords = buildDailyHistoryRecords(scope, snapshotSummary);
-    const snapshotMeta = await saveSnapshot(scope, snapshotSummary, dailyRecords);
+    const snapshotMeta = await saveSnapshot(scope, snapshotSummary, dailyRecords, {
+      collectRequested,
+      modeKey: mode.key,
+      modeLabel: mode.label,
+      fetchPlan
+    });
     const historyMeta = await loadRollingHistory(scope);
-    return sendJson(200, {
+    const responsePayload = {
       generatedAt,
-      cacheSeconds: CACHE_SECONDS,
+      cacheSeconds: mode.cacheSeconds,
+      modeMeta: {
+        key: mode.key,
+        label: mode.label,
+        note: collectRequested ? `${mode.note} Collector run writing the saved dataset for Normal or Crisis board views.` : mode.note,
+        pageDepthByAirport: mode.pageDepthByAirport,
+        collectRequested,
+        fetchPlan,
+        dataSource: collectRequested ? "collector-live" : "live",
+        collectorUrlHint: "/api/collect-normal",
+        crisisCollectorUrlHint: "/api/collect-crisis"
+      },
       scope: scope.key,
       scopeLabel: scope.label,
       snapshotMeta,
@@ -768,20 +954,34 @@ export default async function handler(req, res) {
       },
       flights: dedupedFlights,
       warnings: []
+    };
+    const latestBoardMeta = await saveLatestBoardData(scope, responsePayload, {
+      collectRequested,
+      modeKey: mode.key,
+      modeLabel: mode.label
     });
+    if (latestBoardMeta?.pathname) {
+      responsePayload.snapshotMeta = {
+        ...responsePayload.snapshotMeta,
+        latestBoardPath: latestBoardMeta.pathname
+      };
+    }
+    return sendJson(200, responsePayload, mode.cacheSeconds);
   } catch (error) {
     const generatedAt = new Date().toISOString();
+    const mode = resolveMode(req.query?.mode);
     return sendJson(500, {
       generatedAt,
-      cacheSeconds: CACHE_SECONDS,
-      scope: "ISB",
-      scopeLabel: "Islamabad default",
+      cacheSeconds: mode.cacheSeconds,
+      modeMeta: { key: mode.key, label: mode.label, note: mode.note, pageDepthByAirport: mode.pageDepthByAirport, collectRequested: isCollectorRequest() },
+      scope: "ALL",
+      scopeLabel: "All airports",
       snapshotMeta: { enabled: false, saved: false, note: "Snapshot saving unavailable because the flight refresh failed.", recentCount: null, dailyPathnames: [] },
       coverageMeta: { departures: { truncatedPossible: false, returnedCount: 0, note: "Coverage unavailable because the flight refresh failed." }, arrivals: { truncatedPossible: false, returnedCount: 0, note: "Coverage unavailable because the flight refresh failed." }, byAirport: {} },
       historyMeta: { enabled: false, recentSnapshots: 0, serviceDays: 0, note: "Rolling baseline unavailable because the flight refresh failed.", rollingByRouteWeekday: {}, timelineMeta: { airlineDaily: [], airlineWeekly: [] } },
       filtersMeta: { airports: ["ISB", "LHE", "KHI", "ALL"], airlines: [], statuses: [], directions: [] },
       flights: [],
       warnings: [error.message || "Failed to load FlightAware data."]
-    });
+    }, mode.cacheSeconds);
   }
 }

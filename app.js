@@ -13,7 +13,7 @@ let state = {
   includeMinor: false,
   timezoneMode: "PKT",
   mode: "normal",
-  modeMeta: { key: "normal", label: "Normal mode", note: "Normal mode serves the latest saved collector dataset by default and avoids a fresh live pull.", pageDepthByAirport: { ISB: 6, LHE: 3, KHI: 3 }, dataSource: "saved" },
+  modeMeta: { key: "normal", label: "Normal mode", note: "Normal mode uses a live FlightAware pull behind an 8 hour shared cache. The first refresh after expiry updates the shared dataset and saves history.", pageDepthByAirport: { ISB: 6, LHE: 3, KHI: 3 }, dataSource: "live" },
   cacheSeconds: DEFAULT_CACHE_SECONDS,
   cacheRemaining: DEFAULT_CACHE_SECONDS,
   refreshPaused: false,
@@ -771,7 +771,7 @@ function renderEarlyWarning() {
   if (metaEl) {
     const dailyLoaded = Number(state.raw?.historyMeta?.dailyRecordsLoaded || 0);
     const snapshotSummary = state.snapshotMeta.saved
-      ? `Latest refresh saved. Full snapshots retained: ${state.snapshotMeta.recentCount ?? "—"}${dailyLoaded ? `. Service day files loaded: ${dailyLoaded}.` : "."}`
+      ? `Latest fresh refresh saved. Full snapshots retained: ${state.snapshotMeta.recentCount ?? "—"}${dailyLoaded ? `. Service day files loaded: ${dailyLoaded}.` : "."}`
       : (state.snapshotMeta.note || "Snapshot collection not active.");
     metaEl.innerHTML = `<span class="earlyWarningMetaPill ${model.coverage.cls}">${escapeHtml(model.coverage.label)}</span><span>${escapeHtml(model.coverage.detail)}</span><span>•</span><span>${escapeHtml(snapshotSummary)}</span>`;
   }
@@ -817,8 +817,7 @@ function renderEarlyWarning() {
   const sourceMix = (loadedDaily || Number(state.raw?.historyMeta?.recentSnapshots || 0))
     ? `<br><span class="tableSubMeta">History currently loaded from ${loadedDaily} service day file${loadedDaily === 1 ? "" : "s"} and ${Number(state.raw?.historyMeta?.recentSnapshots || 0)} full snapshot${Number(state.raw?.historyMeta?.recentSnapshots || 0) === 1 ? "" : "s"}.</span>`
     : "";
-  const collectorHint = state.modeMeta?.collectorUrlHint ? `<br><span class="tableSubMeta">Collector URL hint: ${escapeHtml(state.modeMeta.collectorUrlHint)}</span>` : "";
-  snapshotEl.innerHTML = `${escapeHtml(state.snapshotMeta.note || "Snapshot saving has not been configured yet.")}${state.snapshotMeta.pathname ? `<br><span class="tableSubMeta">Latest snapshot: ${escapeHtml(state.snapshotMeta.pathname)}</span>` : ""}${dailyPaths}${sourceMix}${historyNote}${collectorHint}`;
+  snapshotEl.innerHTML = `${escapeHtml(state.snapshotMeta.note || "Snapshot saving has not been configured yet.")}${state.snapshotMeta.pathname ? `<br><span class="tableSubMeta">Latest snapshot: ${escapeHtml(state.snapshotMeta.pathname)}</span>` : ""}${dailyPaths}${sourceMix}${historyNote}`;
   renderHistoryChart();
 }
 
@@ -860,7 +859,7 @@ function renderCacheMeta() {
   if (ageEl) ageEl.textContent = `Data age ${Math.floor(getDataAgeSeconds() / 60)}m`;
   if (cycleEl) cycleEl.textContent = state.mode === "crisis"
     ? `Crisis live ${Math.round((state.cacheSeconds || DEFAULT_CACHE_SECONDS) / 60)}m cache`
-    : `Normal saved board ${Math.round((state.cacheSeconds || DEFAULT_CACHE_SECONDS) / 60)}m refresh cycle`;
+    : `Normal live ${Math.round((state.cacheSeconds || DEFAULT_CACHE_SECONDS) / 3600)}h shared cache`;
   renderModeUi();
 }
 
@@ -874,9 +873,9 @@ function buildInstructions() {
 
     <p><strong>How the data model now works</strong></p>
     <ul>
-      <li><strong>Normal mode</strong> serves the latest saved collector dataset from Blob by default. It is the low cost operating mode and should be your default outside crisis.</li>
-      <li><strong>Crisis mode</strong> switches to a fresh live FlightAware pull with deeper page depth. It costs materially more, which is why the board shows a warning before entering it.</li>
-      <li>The recommended pattern is to run the <strong>Normal collector every 8 hours</strong> so the board stays populated and your rolling baseline keeps building.</li>
+      <li><strong>Normal mode</strong> uses a live FlightAware pull behind an <strong>8 hour shared cache</strong>. The first viewer after cache expiry refreshes the shared dataset, saves history, and everyone else sees that same shared result until the next expiry.</li>
+      <li><strong>If nobody opens the board, nothing is pulled.</strong> That keeps cost lower outside crisis while still saving a fresh history point whenever a real shared refresh happens.</li>
+      <li><strong>Crisis mode</strong> uses a live FlightAware pull with a <strong>1 hour shared cache</strong> and deeper page depth. It costs materially more, which is why the board shows a warning before entering it.</li>
     </ul>
 
     <p><strong>How to use it</strong></p>
@@ -885,9 +884,9 @@ function buildInstructions() {
       <li><strong>Early Warning</strong> compares current usable outbound departures against a checked baseline for the same selected day window, using like for like logic in the summary cards.</li>
       <li><strong>Airlines</strong> groups the visible rows by carrier.</li>
       <li><strong>Airports</strong> shows a quick airport and hub overview.</li>
-      <li><strong>Day</strong> switches between today, tomorrow, and all flights in the saved or live window.</li>
-      <li><strong>Airport</strong> filters the board between Islamabad, Lahore, Karachi, or All airports.</li>
-      <li><strong>Data mode</strong> switches between saved low cost monitoring and live crisis monitoring.</li>
+      <li><strong>Day</strong> switches between today, tomorrow, and all flights in the current window.</li>
+      <li><strong>Airport</strong> filters the board between Islamabad, Lahore, Karachi, or All airports. In Normal mode this is a local filter on the shared All airports dataset. In Crisis mode it triggers a live scoped pull.</li>
+      <li><strong>Data mode</strong> switches between lower cost Normal monitoring and live Crisis monitoring.</li>
       <li><strong>PKT / UK</strong> switches the displayed time reference for the board.</li>
       <li><strong>Load factor</strong> changes only the passenger estimate, not the flight status or timings.</li>
     </ul>
@@ -899,7 +898,7 @@ function buildInstructions() {
       <li><strong>Usable</strong> means a departure that is not cancelled, not diverted, and not delayed more than 60 minutes.</li>
       <li><strong>Normal expected in window</strong> shows where the expected count came from for each row, whether published slots, rolling history, or checked weekly fallback.</li>
       <li>The coverage line still matters. If the source signalled more pages than were pulled, current scheduled counts may still be understated even when the baseline is correct.</li>
-      <li>The history chart is now split by airport tab so it stays readable. Use the Islamabad, Lahore, and Karachi buttons with Day or Week views to compare tracked airlines including Thai where history exists.</li>
+      <li>The history chart is split by airport tab so it stays readable. Use the Islamabad, Lahore, and Karachi buttons with Day or Week views to compare tracked airlines including Thai where history exists.</li>
     </ul>
   `;
 }
@@ -920,7 +919,7 @@ function buildBriefReadout() {
   const divertedPax = diverted.reduce((sum, f) => sum + estimatePax(f), 0);
   const warning = getEarlyWarningModel();
   const sourceText = state.mode === "normal"
-    ? "latest saved collector dataset"
+    ? "live shared Normal dataset"
     : "fresh live crisis pull";
   return `
     <p><strong>Current scope:</strong> ${escapeHtml(state.scopeLabel)}.</p>
@@ -1002,8 +1001,15 @@ function startCacheTimer() {
 
 async function load(isBackground = false) {
   try {
-    const res = await fetch(`/api/flights?airport=${encodeURIComponent(state.airport)}&mode=${encodeURIComponent(state.mode)}`);
-    const data = await res.json();
+    const requestAirport = state.mode === "normal" ? "ALL" : state.airport;
+    const res = await fetch(`/api/flights?airport=${encodeURIComponent(requestAirport)}&mode=${encodeURIComponent(state.mode)}`);
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(text || "Failed to load board data.");
+    }
     if (!res.ok) throw new Error(data?.warnings?.[0] || "Failed to load board data.");
     state.raw = data;
     state.cacheSeconds = Number(data.cacheSeconds || DEFAULT_CACHE_SECONDS);

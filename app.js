@@ -24,7 +24,8 @@ let state = {
   scopeLabel: "All airports",
   snapshotMeta: { enabled: false, saved: false, note: "Snapshot saving not configured.", recentCount: null },
   historyChartGranularity: "day",
-  historyChartAirport: "ISB"
+  historyChartAirport: "ISB",
+  cacheSource: "Unknown"
 };
 
 const AIRLINE_STATUS_LINKS = [
@@ -58,6 +59,7 @@ const HUB_NAMES = {
 };
 
 const PAKISTAN_AIRPORT_NAMES = { ISB: "Islamabad", LHE: "Lahore", KHI: "Karachi" };
+
 function currentScopeLabel() {
   const code = String(state.airport || "ALL").toUpperCase();
   if (code === "ALL") return "All airports";
@@ -860,9 +862,12 @@ function renderCacheMeta() {
   const ageEl = document.getElementById("cacheAgeInfo");
   const cycleEl = document.getElementById("cacheCycleInfo");
   if (ageEl) ageEl.textContent = `Data age ${Math.floor(getDataAgeSeconds() / 60)}m`;
-  if (cycleEl) cycleEl.textContent = state.mode === "crisis"
-    ? `Crisis live ${Math.round((state.cacheSeconds || DEFAULT_CACHE_SECONDS) / 60)}m cache`
-    : `Normal live ${Math.round((state.cacheSeconds || DEFAULT_CACHE_SECONDS) / 3600)}h cache`;
+  if (cycleEl) {
+    const cacheLabel = state.mode === "crisis"
+      ? `Crisis live ${Math.round((state.cacheSeconds || DEFAULT_CACHE_SECONDS) / 60)}m cache`
+      : `Normal live ${Math.round((state.cacheSeconds || DEFAULT_CACHE_SECONDS) / 3600)}h cache`;
+    cycleEl.textContent = `${cacheLabel} • Edge cache ${state.cacheSource || "Unknown"}`;
+  }
   document.querySelectorAll('.modeBtn').forEach((btn) => btn.classList.toggle('active', btn.dataset.mode === state.mode));
 }
 
@@ -1004,6 +1009,7 @@ async function load(isBackground = false) {
   try {
     const res = await fetch(`/api/flights?airport=ALL&mode=${encodeURIComponent(state.mode)}`);
     const data = await res.json();
+    state.cacheSource = res.headers.get("x-vercel-cache") || "Unknown";
     if (!res.ok) throw new Error(data?.warnings?.[0] || "Failed to load board data.");
     state.raw = data;
     state.cacheSeconds = Number(data.cacheSeconds || DEFAULT_CACHE_SECONDS);
@@ -1035,6 +1041,7 @@ async function load(isBackground = false) {
     if (!isBackground) updateCacheUi();
   } catch (error) {
     state.lastLoadFailed = true;
+    state.cacheSource = state.cacheSource || "Unknown";
     renderWarnings([error.message || "Failed to load board data."]);
     renderStaleStatus();
     renderCacheWarning();

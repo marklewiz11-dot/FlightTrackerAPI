@@ -5,7 +5,7 @@ export default async function handler(req, res) {
   const BROWSER_CACHE_SECONDS = 0;
   const KEY_HUBS = ["DOH", "DXB", "DWC", "AUH", "IST", "SAW", "JED", "RUH", "LHR", "LGW", "MCT", "BAH", "KWI", "BKK"];
 
-  const DASHBOARD_USERNAME = process.env.DASHBOARD_USERNAME || "ops";
+  const DASHBOARD_USERNAME = process.env.DASHBOARD_USERNAME || "";
   const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || "";
 
   function sendNoStoreJson(statusCode, payload) {

@@ -59,8 +59,8 @@
           </div>
         </div>
 
-        <button class="topbarBtn" id="logoutBtn" title="Sign out">Logout</button>
         <button class="topbarBtn" id="exportBtn">Export</button>
+        <button class="topbarBtn" id="logoutBtn" title="Sign out">Logout</button>
       </div>
     </header>
 
@@ -315,6 +315,31 @@
           <button class="topbarBtn" id="cancelCrisisBtn">Close and stay in Normal</button>
           <button class="topbarBtn topbarBtnWarning" id="confirmCrisisBtn">Enter Crisis mode</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+
+  <div class="modal hidden" id="loginModal">
+    <div class="modalCard loginCard">
+      <div class="modalHead">
+        <div class="modalTitle">Sign in</div>
+      </div>
+      <div class="briefingBody">
+        <p class="loginIntro">Enter your dashboard credentials to continue.</p>
+        <form id="loginForm" class="loginForm">
+          <label class="loginLabel" for="loginUsername">Username</label>
+          <input id="loginUsername" class="loginInput" type="text" autocomplete="username" />
+
+          <label class="loginLabel" for="loginPassword">Password</label>
+          <input id="loginPassword" class="loginInput" type="password" autocomplete="current-password" />
+
+          <div id="loginError" class="loginError hidden"></div>
+
+          <div class="modalActions">
+            <button type="submit" class="topbarBtn topbarBtnWarning" id="loginSubmitBtn">Sign in</button>
+          </div>
+        </form>
       </div>
     </div>
   </div>

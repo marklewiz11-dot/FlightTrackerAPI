@@ -1,8 +1,8 @@
 const DEFAULT_CACHE_SECONDS = 3600;
+const AUTH_STORAGE_KEY = "flightTrackerAuthV2";
 const WARNING_SECONDS = 5 * 60;
 const DANGER_SECONDS = 30 * 60;
 const KEY_HUBS = ["DOH", "DXB", "DWC", "AUH", "IST", "SAW", "JED", "RUH", "LHR", "LGW", "MCT", "BAH", "KWI", "BKK"];
-const AUTH_STORAGE_KEY = "flightTrackerAuthV1";
 
 let state = {
   raw: null,
@@ -167,8 +167,8 @@ function openLoginModal(message = "") {
   const passEl = document.getElementById("loginPassword");
   if (userEl && !userEl.value) userEl.value = "ops";
   setTimeout(() => {
-    if (state.authToken && passEl) passEl.focus();
-    else if (userEl) userEl.focus();
+    if (userEl && !userEl.value) userEl.focus();
+    else if (passEl) passEl.focus();
   }, 10);
 }
 
@@ -184,9 +184,15 @@ function logout() {
   state.raw = null;
   setStoredAuthToken("");
   document.body.classList.remove("authenticated");
+  renderWarnings(["Signed out."]);
   openLoginModal("Signed out.");
 }
 
+async function buildAuthToken(username, password) {
+  const encoder = new TextEncoder();
+  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(`${username}:${password}`));
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 function getTimeZoneInfo() {
   if (state.timezoneMode === "UK") return { label: "United Kingdom time", zone: "Europe/London" };
@@ -957,7 +963,6 @@ function buildInstructions() {
       <li><strong>Day</strong> switches between today, tomorrow, and all flights in the shared cached window. The board now opens on <strong>All</strong>.</li>
       <li><strong>Airport</strong> filters between Islamabad, Lahore, Karachi, or All airports. The board now opens on <strong>All airports</strong>.</li>
       <li><strong>Data mode</strong> switches between lower cost Normal monitoring and live Crisis monitoring.</li>
-      <li><strong>Login</strong> protects the API route. Only signed in users can trigger data pulls.</li>
       <li><strong>PKT / UK</strong> switches the displayed time reference for the board.</li>
       <li><strong>Load factor</strong> changes only the passenger estimate, not the flight status or timings.</li>
     </ul>
@@ -1069,10 +1074,26 @@ function startCacheTimer() {
 
 async function load(isBackground = false) {
   try {
-    const res = await fetch(`/api/flights?airport=ALL&mode=${encodeURIComponent(state.mode)}`);
+    const url = new URL(`/api/flights`, window.location.origin);
+    url.searchParams.set("airport", "ALL");
+    url.searchParams.set("mode", state.mode);
+    if (state.authToken) url.searchParams.set("auth", state.authToken);
+
+    const res = await fetch(url.toString());
     const data = await res.json();
     state.cacheSource = res.headers.get("x-vercel-cache") || "Unknown";
-    if (!res.ok) throw new Error(data?.warnings?.[0] || "Failed to load board data.");
+
+    if (data?.authRequired) {
+      document.body.classList.remove("authenticated");
+      state.raw = null;
+      state.datasetGeneratedAtMs = null;
+      state.lastLoadFailed = true;
+      renderWarnings([]);
+      openLoginModal(data.warning || "Login required.");
+      return false;
+    }
+
+    if (!res.ok) throw new Error(data?.warnings?.[0] || data?.warning || "Failed to load board data.");
     state.raw = data;
     state.cacheSeconds = Number(data.cacheSeconds || DEFAULT_CACHE_SECONDS);
     state.scopeLabel = currentScopeLabel();
@@ -1104,6 +1125,7 @@ async function load(isBackground = false) {
     if (!window.cacheTimer) startCacheTimer();
     else updateCacheUi();
     if (!isBackground) updateCacheUi();
+    return true;
   } catch (error) {
     state.lastLoadFailed = true;
     state.cacheSource = state.cacheSource || "Unknown";
@@ -1111,6 +1133,7 @@ async function load(isBackground = false) {
     renderStaleStatus();
     renderCacheWarning();
     renderCacheMeta();
+    return false;
   }
 }
 
@@ -1165,7 +1188,6 @@ async function switchMode(nextMode) {
   await load(false);
 }
 
-
 async function submitLogin(event) {
   event.preventDefault();
   const username = document.getElementById("loginUsername")?.value?.trim() || "";
@@ -1175,25 +1197,25 @@ async function submitLogin(event) {
     setLoginError("Enter both username and password.");
     return;
   }
-  const token = `Basic ${btoa(`${username}:${password}`)}`;
   if (submitBtn) submitBtn.disabled = true;
-  const previousToken = state.authToken;
-  state.authToken = token;
-  const ok = await load(false);
-  if (submitBtn) submitBtn.disabled = false;
-  if (ok) {
-    setStoredAuthToken(token);
-    state.authUser = username;
-    document.body.classList.add("authenticated");
+  try {
+    const token = await buildAuthToken(username, password);
+    const previousToken = state.authToken;
+    state.authToken = token;
+    const ok = await load(false);
+    if (ok) {
+      setStoredAuthToken(token);
+      state.authUser = username;
+      document.getElementById("loginPassword").value = "";
+      return;
+    }
+    state.authToken = previousToken || null;
+    if (!state.authToken) setStoredAuthToken("");
     document.getElementById("loginPassword").value = "";
-    closeLoginModal();
-    return;
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
   }
-  state.authToken = previousToken && previousToken !== token ? previousToken : null;
-  if (!state.authToken) setStoredAuthToken("");
-  document.getElementById("loginPassword").value = "";
 }
-
 
 document.addEventListener("click", async (e) => {
   const dayBtn = e.target.closest(".seg[data-day]");

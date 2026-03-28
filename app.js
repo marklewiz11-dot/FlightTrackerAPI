@@ -2,6 +2,7 @@ const DEFAULT_CACHE_SECONDS = 3600;
 const WARNING_SECONDS = 5 * 60;
 const DANGER_SECONDS = 30 * 60;
 const KEY_HUBS = ["DOH", "DXB", "DWC", "AUH", "IST", "SAW", "JED", "RUH", "LHR", "LGW", "MCT", "BAH", "KWI", "BKK"];
+const AUTH_STORAGE_KEY = "flightTrackerAuthV1";
 
 let state = {
   raw: null,
@@ -25,7 +26,9 @@ let state = {
   snapshotMeta: { enabled: false, saved: false, note: "Snapshot saving not configured.", recentCount: null },
   historyChartGranularity: "day",
   historyChartAirport: "ISB",
-  cacheSource: "Unknown"
+  cacheSource: "Unknown",
+  authToken: null,
+  authUser: ""
 };
 
 const AIRLINE_STATUS_LINKS = [
@@ -126,6 +129,64 @@ PUBLISHED_SCHEDULE_BASELINE.ALL = [
   ...PUBLISHED_SCHEDULE_BASELINE.LHE,
   ...PUBLISHED_SCHEDULE_BASELINE.KHI
 ];
+
+
+function getStoredAuthToken() {
+  try {
+    return sessionStorage.getItem(AUTH_STORAGE_KEY) || "";
+  } catch (_) {
+    return "";
+  }
+}
+
+function setStoredAuthToken(token) {
+  try {
+    if (token) sessionStorage.setItem(AUTH_STORAGE_KEY, token);
+    else sessionStorage.removeItem(AUTH_STORAGE_KEY);
+  } catch (_) {}
+}
+
+function setLoginError(message = "") {
+  const errorEl = document.getElementById("loginError");
+  if (!errorEl) return;
+  if (!message) {
+    errorEl.textContent = "";
+    errorEl.classList.add("hidden");
+    return;
+  }
+  errorEl.textContent = message;
+  errorEl.classList.remove("hidden");
+}
+
+function openLoginModal(message = "") {
+  const modal = document.getElementById("loginModal");
+  if (!modal) return;
+  setLoginError(message);
+  modal.classList.remove("hidden");
+  const userEl = document.getElementById("loginUsername");
+  const passEl = document.getElementById("loginPassword");
+  if (userEl && !userEl.value) userEl.value = "ops";
+  setTimeout(() => {
+    if (state.authToken && passEl) passEl.focus();
+    else if (userEl) userEl.focus();
+  }, 10);
+}
+
+function closeLoginModal() {
+  const modal = document.getElementById("loginModal");
+  if (modal) modal.classList.add("hidden");
+  setLoginError("");
+}
+
+function logout() {
+  state.authToken = null;
+  state.authUser = "";
+  state.raw = null;
+  setStoredAuthToken("");
+  document.body.classList.remove("authenticated");
+  openLoginModal("Signed out.");
+}
+
 
 function getTimeZoneInfo() {
   if (state.timezoneMode === "UK") return { label: "United Kingdom time", zone: "Europe/London" };
@@ -896,6 +957,7 @@ function buildInstructions() {
       <li><strong>Day</strong> switches between today, tomorrow, and all flights in the shared cached window. The board now opens on <strong>All</strong>.</li>
       <li><strong>Airport</strong> filters between Islamabad, Lahore, Karachi, or All airports. The board now opens on <strong>All airports</strong>.</li>
       <li><strong>Data mode</strong> switches between lower cost Normal monitoring and live Crisis monitoring.</li>
+      <li><strong>Login</strong> protects the API route. Only signed in users can trigger data pulls.</li>
       <li><strong>PKT / UK</strong> switches the displayed time reference for the board.</li>
       <li><strong>Load factor</strong> changes only the passenger estimate, not the flight status or timings.</li>
     </ul>
@@ -1017,6 +1079,9 @@ async function load(isBackground = false) {
     state.snapshotMeta = data.snapshotMeta || state.snapshotMeta;
     state.modeMeta = data.modeMeta || state.modeMeta;
     state.mode = data.modeMeta?.key || state.mode;
+    state.authUser = data.authUser || state.authUser || "";
+    document.body.classList.add("authenticated");
+    closeLoginModal();
     const generatedAtMs = data.generatedAt ? new Date(data.generatedAt).getTime() : Date.now();
     state.datasetGeneratedAtMs = generatedAtMs;
     state.lastLoadFailed = false;
@@ -1100,6 +1165,36 @@ async function switchMode(nextMode) {
   await load(false);
 }
 
+
+async function submitLogin(event) {
+  event.preventDefault();
+  const username = document.getElementById("loginUsername")?.value?.trim() || "";
+  const password = document.getElementById("loginPassword")?.value || "";
+  const submitBtn = document.getElementById("loginSubmitBtn");
+  if (!username || !password) {
+    setLoginError("Enter both username and password.");
+    return;
+  }
+  const token = `Basic ${btoa(`${username}:${password}`)}`;
+  if (submitBtn) submitBtn.disabled = true;
+  const previousToken = state.authToken;
+  state.authToken = token;
+  const ok = await load(false);
+  if (submitBtn) submitBtn.disabled = false;
+  if (ok) {
+    setStoredAuthToken(token);
+    state.authUser = username;
+    document.body.classList.add("authenticated");
+    document.getElementById("loginPassword").value = "";
+    closeLoginModal();
+    return;
+  }
+  state.authToken = previousToken && previousToken !== token ? previousToken : null;
+  if (!state.authToken) setStoredAuthToken("");
+  document.getElementById("loginPassword").value = "";
+}
+
+
 document.addEventListener("click", async (e) => {
   const dayBtn = e.target.closest(".seg[data-day]");
   if (dayBtn) {
@@ -1147,6 +1242,8 @@ document.getElementById("minorCarrierToggle").addEventListener("change", (e) => 
 document.getElementById("loadFactorSlider").addEventListener("input", (e) => { state.loadFactor = Number(e.target.value || 85); refreshView(); });
 document.getElementById("pauseRefreshBtn").addEventListener("click", () => { state.refreshPaused = !state.refreshPaused; updateCacheUi(); });
 document.getElementById("exportBtn").addEventListener("click", exportRows);
+document.getElementById("logoutBtn").addEventListener("click", logout);
+document.getElementById("loginForm").addEventListener("submit", submitLogin);
 
 document.getElementById("resetFilters").addEventListener("click", async () => {
   state.day = "all";
@@ -1177,4 +1274,9 @@ document.getElementById("briefModal").addEventListener("click", (e) => { if (e.t
 document.getElementById("airlineStatusModal").addEventListener("click", (e) => { if (e.target.id === "airlineStatusModal") closeAirlineStatus(); });
 document.getElementById("crisisConfirmModal").addEventListener("click", (e) => { if (e.target.id === "crisisConfirmModal") closeCrisisConfirm(); });
 
-load();
+state.authToken = getStoredAuthToken();
+if (state.authToken) {
+  load();
+} else {
+  openLoginModal();
+}

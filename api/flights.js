@@ -1,5 +1,5 @@
 export default async function handler(req, res) {
-  const apiKey = process.env.FLIGHTAWARE_API_KEY || "hn1UO6XF9P3DrZPwMPi5ABgWXEV3wrvF";
+  const apiKey = process.env.FLIGHTAWARE_API_KEY || "PASTE_YOUR_FLIGHTAWARE_KEY_HERE";
   const base = "https://aeroapi.flightaware.com/aeroapi";
   const DEFAULT_CACHE_SECONDS = 3600;
   const BROWSER_CACHE_SECONDS = 0;
@@ -67,9 +67,9 @@ export default async function handler(req, res) {
   ]);
 
   function setCacheHeaders(cacheSeconds = DEFAULT_CACHE_SECONDS) {
-    res.setHeader("Cache-Control", `public, max-age=${BROWSER_CACHE_SECONDS}, must-revalidate`);
-    res.setHeader("CDN-Cache-Control", `public, max-age=${cacheSeconds}, stale-while-revalidate=60`);
-    res.setHeader("Vercel-CDN-Cache-Control", `public, max-age=${cacheSeconds}, stale-while-revalidate=60`);
+    res.setHeader("Cache-Control", `public, max-age=${BROWSER_CACHE_SECONDS}, s-maxage=${cacheSeconds}, must-revalidate`);
+    res.setHeader("CDN-Cache-Control", `public, max-age=${cacheSeconds}`);
+    res.setHeader("Vercel-CDN-Cache-Control", `public, max-age=${cacheSeconds}`);
   }
 
   function sendJson(statusCode, payload, cacheSeconds = DEFAULT_CACHE_SECONDS) {
@@ -767,12 +767,12 @@ export default async function handler(req, res) {
   }
 
   try {
-    const generatedAt = new Date().toISOString();
     const mode = resolveMode(req.query?.mode);
     const requestedScope = req.query?.airport || req.query?.scope || "ALL";
     const scope = resolveScope(requestedScope, mode);
     const { start, end } = getBroadPakistanWindow();
     const { flights: dedupedFlights, coverageMeta } = await fetchWindowForAirports(scope.airportIds, start, end, scope.pageLimitMap);
+    const generatedAt = new Date().toISOString();
     dedupedFlights.sort((a, b) => {
       const aTime = toMillis(a.bestDep || a.bestArr || a.scheduledDep || a.scheduledArr) || 0;
       const bTime = toMillis(b.bestDep || b.bestArr || b.scheduledDep || b.scheduledArr) || 0;

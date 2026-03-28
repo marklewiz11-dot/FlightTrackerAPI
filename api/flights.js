@@ -1,64 +1,13 @@
+import { createHash } from "node:crypto";
+
 export default async function handler(req, res) {
-  const apiKey = process.env.FLIGHTAWARE_API_KEY || "hn1UO6XF9P3DrZPwMPi5ABgWXEV3wrvF";
+  const apiKey = "hn1UO6XF9P3DrZPwMPi5ABgWXEV3wrvF";
   const base = "https://aeroapi.flightaware.com/aeroapi";
   const DEFAULT_CACHE_SECONDS = 3600;
   const BROWSER_CACHE_SECONDS = 0;
   const KEY_HUBS = ["DOH", "DXB", "DWC", "AUH", "IST", "SAW", "JED", "RUH", "LHR", "LGW", "MCT", "BAH", "KWI", "BKK"];
-
-  const DASHBOARD_USERNAME = process.env.DASHBOARD_USERNAME || "";
+  const DASHBOARD_USERNAME = process.env.DASHBOARD_USERNAME || "ops";
   const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || "";
-
-  function sendNoStoreJson(statusCode, payload) {
-    res.setHeader("Cache-Control", "no-store");
-    res.setHeader("CDN-Cache-Control", "no-store");
-    res.setHeader("Vercel-CDN-Cache-Control", "no-store");
-    return res.status(statusCode).json(payload);
-  }
-
-  function parseBasicAuth(headerValue) {
-    const value = String(headerValue || "");
-    if (!value.startsWith("Basic ")) return null;
-    const auth = isAuthorisedRequest();
-  if (!auth.ok) {
-    return sendNoStoreJson(auth.status, {
-      authRequired: true,
-      warning: auth.message,
-      flights: [],
-      filtersMeta: { airports: ["ALL", "ISB", "LHE", "KHI"], airlines: [], statuses: [], directions: [] },
-      snapshotMeta: { enabled: false, saved: false, note: "Login required.", recentCount: null },
-      modeMeta: MODE_CONFIG.normal,
-      generatedAt: null,
-      cacheSeconds: 0
-    });
-  }
-
-  try {
-      const decoded = Buffer.from(value.slice(6), "base64").toString("utf8");
-      const splitIndex = decoded.indexOf(":");
-      if (splitIndex === -1) return null;
-      return {
-        username: decoded.slice(0, splitIndex),
-        password: decoded.slice(splitIndex + 1)
-      };
-    } catch (_) {
-      return null;
-    }
-  }
-
-  function isAuthorisedRequest() {
-    if (!DASHBOARD_PASSWORD) {
-      return { ok: false, status: 500, message: "Dashboard login is not configured. Add DASHBOARD_PASSWORD in Vercel environment variables." };
-    }
-    const parsed = parseBasicAuth(req.headers?.authorization);
-    if (!parsed) {
-      return { ok: false, status: 401, message: "Login required." };
-    }
-    if (parsed.username !== DASHBOARD_USERNAME || parsed.password !== DASHBOARD_PASSWORD) {
-      return { ok: false, status: 401, message: "Incorrect username or password." };
-    }
-    return { ok: true, username: parsed.username };
-  }
-
   const MODE_CONFIG = {
     normal: {
       key: "normal",
@@ -131,6 +80,34 @@ export default async function handler(req, res) {
     setCacheHeaders(cacheSeconds);
     if (payload && payload.generatedAt) res.setHeader("X-Data-Generated-At", payload.generatedAt);
     return res.status(statusCode).json(payload);
+  }
+
+
+  function sendNoStoreJson(statusCode, payload) {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("CDN-Cache-Control", "no-store");
+    res.setHeader("Vercel-CDN-Cache-Control", "no-store");
+    return res.status(statusCode).json(payload);
+  }
+
+  function getExpectedAuthToken() {
+    if (!DASHBOARD_PASSWORD) return "";
+    return createHash("sha256").update(`${DASHBOARD_USERNAME}:${DASHBOARD_PASSWORD}`).digest("hex");
+  }
+
+  function isAuthorisedRequest() {
+    if (!DASHBOARD_PASSWORD) {
+      return { ok: false, status: 500, message: "Dashboard login is not configured. Add DASHBOARD_PASSWORD in Vercel environment variables." };
+    }
+    const provided = String(req.query?.auth || "").trim();
+    if (!provided) {
+      return { ok: false, status: 401, message: "Login required." };
+    }
+    const expected = getExpectedAuthToken();
+    if (provided !== expected) {
+      return { ok: false, status: 401, message: "Incorrect username or password." };
+    }
+    return { ok: true, username: DASHBOARD_USERNAME };
   }
 
   function headers() {
@@ -517,7 +494,6 @@ export default async function handler(req, res) {
 
     return {
       generatedAt,
-      authUser: auth.username,
       scope: scope.key,
       scopeLabel: scope.label,
       totalFlights: flights.length,
@@ -822,6 +798,21 @@ export default async function handler(req, res) {
     }
   }
 
+  const auth = isAuthorisedRequest();
+  if (!auth.ok) {
+    return sendNoStoreJson(auth.status, {
+      authRequired: true,
+      warning: auth.message,
+      flights: [],
+      filtersMeta: { airports: ["ALL", "ISB", "LHE", "KHI"], airlines: [], statuses: [], directions: [] },
+      snapshotMeta: { enabled: false, saved: false, note: "Login required.", recentCount: null },
+      modeMeta: MODE_CONFIG.normal,
+      generatedAt: null,
+      cacheSeconds: 0,
+      historyMeta: { enabled: false, recentSnapshots: 0, serviceDays: 0, note: "Login required.", rollingByRouteWeekday: {}, timelineMeta: { airlineDaily: [], airlineWeekly: [] } }
+    });
+  }
+
   try {
     const mode = resolveMode(req.query?.mode);
     const requestedScope = req.query?.airport || req.query?.scope || "ALL";
@@ -855,7 +846,8 @@ export default async function handler(req, res) {
         directions: ["Both", "Departure", "Arrival"]
       },
       flights: dedupedFlights,
-      warnings: []
+      warnings: [],
+      authUser: auth.username
     }, mode.cacheSeconds);
   } catch (error) {
     const generatedAt = new Date().toISOString();

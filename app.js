@@ -14,7 +14,7 @@ let state = {
   includeMinor: false,
   timezoneMode: "PKT",
   mode: "normal",
-  modeMeta: { key: "normal", label: "Normal mode", note: "Normal mode uses a live FlightAware pull behind an 8 hour shared cache. The first refresh after expiry updates the shared dataset and saves history.", pageDepthByAirport: { ISB: 6, LHE: 3, KHI: 3 }, dataSource: "live" },
+  modeMeta: { key: "normal", label: "Normal mode", note: "Normal mode uses one shared stored dataset for all users. The first request after 8 hours refreshes it once and updates the saved history.", pageDepthByAirport: { ISB: 6, LHE: 3, KHI: 3 }, dataSource: "shared" },
   cacheSeconds: 8 * 60 * 60,
   cacheRemaining: 8 * 60 * 60,
   refreshPaused: false,
@@ -26,7 +26,8 @@ let state = {
   snapshotMeta: { enabled: false, saved: false, note: "Snapshot saving not configured.", recentCount: null },
   historyChartGranularity: "day",
   historyChartAirport: "ISB",
-  cacheSource: "Unknown",
+  cacheSource: "Shared dataset",
+  deliveryMeta: null,
   authToken: null,
   authUser: ""
 };
@@ -165,7 +166,6 @@ function openLoginModal(message = "") {
   modal.classList.remove("hidden");
   const userEl = document.getElementById("loginUsername");
   const passEl = document.getElementById("loginPassword");
-  if (userEl && !userEl.value) userEl.value = "ops";
   setTimeout(() => {
     if (userEl && !userEl.value) userEl.focus();
     else if (passEl) passEl.focus();
@@ -930,10 +930,13 @@ function renderCacheMeta() {
   const cycleEl = document.getElementById("cacheCycleInfo");
   if (ageEl) ageEl.textContent = `Data age ${Math.floor(getDataAgeSeconds() / 60)}m`;
   if (cycleEl) {
-    const cacheLabel = state.mode === "crisis"
-      ? `Crisis live ${Math.round((state.cacheSeconds || DEFAULT_CACHE_SECONDS) / 60)}m cache`
-      : `Normal live ${Math.round((state.cacheSeconds || DEFAULT_CACHE_SECONDS) / 3600)}h cache`;
-    cycleEl.textContent = `${cacheLabel} • Edge cache ${state.cacheSource || "Unknown"}`;
+    if (state.mode === "crisis") {
+      const cacheLabel = `Crisis live ${Math.round((state.cacheSeconds || DEFAULT_CACHE_SECONDS) / 60)}m cache`;
+      cycleEl.textContent = `${cacheLabel} • ${state.cacheSource || "Edge cache unknown"}`;
+    } else {
+      const cacheLabel = `Normal shared ${Math.round((state.cacheSeconds || DEFAULT_CACHE_SECONDS) / 3600)}h dataset`;
+      cycleEl.textContent = `${cacheLabel} • ${state.cacheSource || "Shared dataset"}`;
+    }
   }
   document.querySelectorAll('.modeBtn').forEach((btn) => btn.classList.toggle('active', btn.dataset.mode === state.mode));
 }
@@ -949,7 +952,7 @@ function buildInstructions() {
 
     <p><strong>How the data modes work</strong></p>
     <ul>
-      <li><strong>Normal mode</strong> uses a live FlightAware pull behind an <strong>8 hour shared cache</strong>. The first refresh after cache expiry updates the shared dataset and saves history.</li>
+      <li><strong>Normal mode</strong> uses one <strong>shared stored dataset</strong> for all users. Everyone reads the same saved Normal dataset until the 8 hour refresh window expires, then the first request refreshes it and updates history.</li>
       <li><strong>Crisis mode</strong> uses a live FlightAware pull behind a <strong>1 hour shared cache</strong> with materially deeper page depth and a cost warning before entry.</li>
       <li>Snapshots are still saved on fresh shared refreshes, so the line graph and rolling baseline continue to build over time.</li>
     </ul>
@@ -960,7 +963,7 @@ function buildInstructions() {
       <li><strong>Early Warning</strong> compares current usable outbound departures against a checked baseline for the same selected day window, using like for like logic in the summary cards.</li>
       <li><strong>Airlines</strong> groups the visible rows by carrier.</li>
       <li><strong>Airports</strong> shows a quick airport and hub overview.</li>
-      <li><strong>Day</strong> switches between today, tomorrow, and all flights in the shared cached window. The board now opens on <strong>All</strong>.</li>
+      <li><strong>Day</strong> switches between today, tomorrow, and all flights in the shared normal window. The board now opens on <strong>All</strong>.</li>
       <li><strong>Airport</strong> filters between Islamabad, Lahore, Karachi, or All airports. The board now opens on <strong>All airports</strong>.</li>
       <li><strong>Data mode</strong> switches between lower cost Normal monitoring and live Crisis monitoring.</li>
       <li><strong>PKT / UK</strong> switches the displayed time reference for the board.</li>
@@ -1081,12 +1084,16 @@ async function load(isBackground = false) {
 
     const res = await fetch(url.toString());
     const data = await res.json();
-    state.cacheSource = res.headers.get("x-vercel-cache") || "Unknown";
+    state.deliveryMeta = data.deliveryMeta || null;
+    state.cacheSource = data?.deliveryMeta?.label
+      || (state.mode === "crisis" ? `Edge cache ${res.headers.get("x-vercel-cache") || "Unknown"}` : "Shared dataset")
+      || "Unknown";
 
     if (data?.authRequired) {
       document.body.classList.remove("authenticated");
       state.raw = null;
       state.datasetGeneratedAtMs = null;
+      state.deliveryMeta = null;
       state.lastLoadFailed = true;
       renderWarnings([]);
       openLoginModal(data.warning || "Login required.");
@@ -1099,6 +1106,7 @@ async function load(isBackground = false) {
     state.scopeLabel = currentScopeLabel();
     state.snapshotMeta = data.snapshotMeta || state.snapshotMeta;
     state.modeMeta = data.modeMeta || state.modeMeta;
+    state.deliveryMeta = data.deliveryMeta || state.deliveryMeta;
     state.mode = data.modeMeta?.key || state.mode;
     state.authUser = data.authUser || state.authUser || "";
     document.body.classList.add("authenticated");
@@ -1118,7 +1126,10 @@ async function load(isBackground = false) {
 
     const updated = data.generatedAt ? new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Karachi", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(data.generatedAt)) : "—";
     const cacheInfo = document.getElementById("cacheInfo");
-    if (cacheInfo) cacheInfo.textContent = `Cache updated ${updated} PKT`;
+    if (cacheInfo) {
+      const prefix = state.mode === "crisis" ? "Live data" : "Shared dataset";
+      cacheInfo.textContent = `${prefix} from ${updated} PKT`;
+    }
 
     renderWarnings([]);
     refreshView();
@@ -1128,7 +1139,7 @@ async function load(isBackground = false) {
     return true;
   } catch (error) {
     state.lastLoadFailed = true;
-    state.cacheSource = state.cacheSource || "Unknown";
+    state.cacheSource = state.cacheSource || (state.mode === "crisis" ? "Edge cache unknown" : "Shared dataset");
     renderWarnings([error.message || "Failed to load board data."]);
     renderStaleStatus();
     renderCacheWarning();

@@ -310,7 +310,7 @@
       </div>
       <div class="briefingBody" id="crisisConfirmBody">
         <p><strong>Crisis mode uses a live FlightAware pull, deeper page depth, and a 1 hour cache, so it costs materially more than Normal mode.</strong></p>
-        <p>Normal mode stays on a live pull too, but behind an 8 hour shared cache for lower cost day to day monitoring.</p>
+        <p>Normal mode uses one shared stored dataset for all users and only refreshes it after the 8 hour window expires.</p>
         <div class="modalActions">
           <button class="topbarBtn" id="cancelCrisisBtn">Close and stay in Normal</button>
           <button class="topbarBtn topbarBtnWarning" id="confirmCrisisBtn">Enter Crisis mode</button>
@@ -329,10 +329,10 @@
         <p class="loginIntro">Enter your dashboard credentials to continue.</p>
         <form id="loginForm" class="loginForm">
           <label class="loginLabel" for="loginUsername">Username</label>
-          <input id="loginUsername" class="loginInput" type="text" autocomplete="username" />
+          <input id="loginUsername" class="loginInput" type="text" autocomplete="username" placeholder="Enter username" />
 
           <label class="loginLabel" for="loginPassword">Password</label>
-          <input id="loginPassword" class="loginInput" type="password" autocomplete="current-password" />
+          <input id="loginPassword" class="loginInput" type="password" autocomplete="current-password" placeholder="Enter password" />
 
           <div id="loginError" class="loginError hidden"></div>
 
